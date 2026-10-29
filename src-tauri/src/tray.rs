@@ -172,7 +172,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
 
     TrayIconBuilder::with_id("main")
         .icon(icon)
-        .tooltip("wangstock · 右键查看行情菜单")
+        .tooltip("wangstock")
         .on_tray_icon_event(|tray, event| {
             let app = tray.app_handle();
             match event {
