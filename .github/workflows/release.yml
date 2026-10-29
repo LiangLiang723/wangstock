@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Windows x64
+    runs-on: windows-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: 缓存 Rust 依赖
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: 安装前端依赖
+        run: npm ci
+
+      - name: 构建并发布
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "wangstock ${{ github.ref_name }}"
+          releaseDraft: false
+          prerelease: false
+          releaseBody: |
+            ## wangstock ${{ github.ref_name }}
+
+            轻量自选行情桌面端 · Windows x64 · 单文件 4.6 MB
+
+            ### 下载
+
+            | 文件 | 说明 |
+            | --- | --- |
+            | `wangstock_*_x64-setup.exe` | 安装版，写入开始菜单与卸载项 |
+            | `wangstock.exe` | 绿色版，双击即用，不写注册表 |
+
+            依赖系统 WebView2 运行时：Windows 11 自带；Windows 10 若缺失，安装包会自动引导安装。
+
+            ### 功能
+
+            - 自选股与 ETF 管理：分组、拖拽排序、跨组移动
+            - A 股 + 港股实时/延迟行情，红涨绿跌
+            - 自定义行业分类树，支持多级归类
+            - 点击个股进入详情：分时走势、五档盘口、估值指标
+            - 托盘常驻：左键唤出主界面，右键弹出行情菜单
+
+            ### 更新内容
+
+            见下方提交记录。
+
+            ### 说明
+
+            - 行情数据来自腾讯 / 新浪公开接口，仅供个人参考，**不构成投资建议**。
+            - 港股为延迟行情，界面会明确标注。
+            - 遇到问题请提交 [Issue](https://github.com/LiangLiang723/wangstock/issues)。
+
+      - name: 附加绿色版
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: src-tauri/target/release/wangstock.exe
+          fail_on_unmatched_files: false
