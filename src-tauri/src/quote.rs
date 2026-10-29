@@ -1,4 +1,4 @@
-use crate::model::{market_of, Detail, Level, MinutePoint, Quote, SearchHit};
+use crate::model::{market_of, Candle, Detail, Level, MinutePoint, Quote, SearchHit};
 use chrono::{Datelike, Local, Timelike, Weekday};
 use encoding_rs::GBK;
 use std::io::Read;
@@ -491,24 +491,96 @@ pub fn fetch_minute(symbol: &str) -> Result<Vec<MinutePoint>, String> {
         .ok_or_else(|| "该标的暂无分时数据".to_string())?;
 
     let mut out: Vec<MinutePoint> = Vec::with_capacity(arr.len());
+    let mut cum_vol = 0.0_f64;
+    let mut cum_amt = 0.0_f64;
     for item in arr {
         if let Some(s) = item.as_str() {
-            let mut it = s.split(' ');
-            let t = it.next().unwrap_or("");
-            let price = it
-                .next()
-                .and_then(|x| x.parse::<f64>().ok())
-                .unwrap_or(0.0);
-            if t.len() == 4 && price > 0.0 {
-                out.push(MinutePoint {
-                    t: format!("{}:{}", &t[0..2], &t[2..4]),
-                    price,
-                });
+            let parts: Vec<&str> = s.split(' ').collect();
+            if parts.len() < 2 {
+                continue;
             }
+            let t = parts[0];
+            let price = parts[1].parse::<f64>().unwrap_or(0.0);
+            let vol = parts.get(2).and_then(|x| x.parse::<f64>().ok()).unwrap_or(0.0);
+            let amt = parts.get(3).and_then(|x| x.parse::<f64>().ok()).unwrap_or(0.0);
+            if t.len() != 4 || price <= 0.0 {
+                continue;
+            }
+            // 接口给的是每分钟量（手）与额（元），累加成 VWAP 分子分母
+            cum_vol += vol * 100.0;
+            cum_amt += amt;
+            let avg = if cum_vol > 0.0 { cum_amt / cum_vol } else { price };
+            out.push(MinutePoint {
+                t: format!("{}:{}", &t[0..2], &t[2..4]),
+                price,
+                avg,
+            });
         }
     }
     if out.is_empty() {
         return Err("该标的暂无分时数据".into());
+    }
+    Ok(out)
+}
+
+/// 前复权 K 线。period 取 day / week / month，接口返回
+/// [日期, 开, 收, 高, 低, 量]，数值可能是字符串也可能是数字，统一兼容。
+pub fn fetch_kline(symbol: &str, period: &str, limit: usize) -> Result<Vec<Candle>, String> {
+    let sym = symbol.trim().to_lowercase();
+    let p = match period {
+        "week" => "week",
+        "month" => "month",
+        _ => "day",
+    };
+    let n = limit.clamp(20, 400);
+    let url = format!(
+        "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={},{},,,{},qfq",
+        sym, p, n
+    );
+    let text = http_get(&url, "https://gu.qq.com/", 8000)?;
+    let v: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("K线数据解析失败: {}", e))?;
+
+    let node = v
+        .get("data")
+        .and_then(|d| d.get(&sym))
+        .ok_or_else(|| "该标的暂无K线数据".to_string())?;
+
+    let key = format!("qfq{}", p);
+    let arr = node
+        .get(&key)
+        .or_else(|| node.get(p))
+        .and_then(|a| a.as_array())
+        .ok_or_else(|| "该标的暂无K线数据".to_string())?;
+
+    let num = |x: &serde_json::Value| -> f64 {
+        x.as_f64()
+            .or_else(|| x.as_str().and_then(|s| s.parse::<f64>().ok()))
+            .unwrap_or(0.0)
+    };
+
+    let mut out: Vec<Candle> = Vec::with_capacity(arr.len());
+    for item in arr {
+        let Some(a) = item.as_array() else { continue };
+        if a.len() < 6 {
+            continue;
+        }
+        let date = a[0].as_str().unwrap_or("").to_string();
+        let close = num(&a[2]);
+        if date.is_empty() || close <= 0.0 {
+            continue;
+        }
+        out.push(Candle {
+            date,
+            open: num(&a[1]),
+            close,
+            high: num(&a[3]),
+            low: num(&a[4]),
+            volume: num(&a[5]),
+        });
+    }
+    if out.is_empty() {
+        return Err("该标的暂无K线数据".into());
     }
     Ok(out)
 }

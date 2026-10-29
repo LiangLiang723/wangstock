@@ -338,6 +338,11 @@ fn get_minute(symbol: String) -> Result<Vec<MinutePoint>, String> {
 }
 
 #[tauri::command]
+fn get_kline(symbol: String, period: String, limit: usize) -> Result<Vec<Candle>, String> {
+    quote::fetch_kline(&symbol, &period, limit)
+}
+
+#[tauri::command]
 fn show_main_cmd(app: tauri::AppHandle) {
     tray::show_main(&app);
 }
@@ -430,6 +435,7 @@ fn main() {
             get_quotes,
             get_detail,
             get_minute,
+            get_kline,
             show_main_cmd,
             quit_app,
             hide_flyout_cmd,

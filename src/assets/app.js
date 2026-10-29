@@ -305,6 +305,7 @@
   async function tick() {
     clearTimeout(S.timer);
     if (!S.data) return;
+    refreshIndexes();
     if (S.view === 'detail' && DS.sym) {
       await refreshDetail(false);
       schedule();
@@ -766,10 +767,28 @@
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
       e.preventDefault();
       openSearch();
+      return;
     }
     if (e.key === 'Escape') {
-      closeModal();
+      if (overlay.classList.contains('on')) {
+        closeModal();
+        return;
+      }
+      if (S.view === 'detail') {
+        closeDetail();
+        return;
+      }
       hideMenu();
+      return;
+    }
+    if (S.view === 'detail' && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      const list = currentSymbols();
+      const i = list.indexOf(DS.sym);
+      const ni = i + (e.key === 'ArrowDown' ? 1 : -1);
+      if (i >= 0 && ni >= 0 && ni < list.length) {
+        e.preventDefault();
+        openDetail(list[ni]);
+      }
     }
   });
 
@@ -861,7 +880,7 @@
 
 
   // ---------- 个股详情 ----------
-  const DS = { sym: null, data: null, minute: [], minuteSym: null, minuteAt: 0 };
+  const DS = { sym: null, data: null, minute: [], minuteSym: null, minuteAt: 0, period: 'minute', kline: {} };
 
   const cssVar = (n) => getComputedStyle(document.body).getPropertyValue(n).trim();
   const fmtN = (v, d) => (v == null || v === 0 ? '—' : v.toFixed(d));
@@ -883,6 +902,8 @@
     DS.data = null;
     DS.minute = [];
     DS.minuteSym = null;
+    DS.period = 'minute';
+    DS.kline = {};
     S.view = 'detail';
     S.detailSym = sym;
     document.querySelector('.content').classList.add('detail-mode');
@@ -932,11 +953,11 @@
   }
 
   function drawMinute(points, prev, rise) {
-    const W = 720, H = 168, PX = 4, PY = 10;
+    const W = 720, H = 134, PX = 4, PY = 8;
     if (!points || points.length < 2) {
       return '<div style="height:150px;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:11.5px">暂无分时数据</div>';
     }
-    const vals = points.map((p) => p.price);
+    const vals = points.map((p) => p.price).concat(points.map((p) => p.avg || p.price));
     let min = Math.min.apply(null, vals);
     let max = Math.max.apply(null, vals);
     if (prev) {
@@ -968,11 +989,19 @@
       base = '<line x1="' + PX + '" y1="' + by + '" x2="' + (W - PX) + '" y2="' + by + '" stroke="#5c5c6a" stroke-width="1" stroke-dasharray="3 4"/>';
     }
 
+    let avgPath = '';
+    if (points[0] && points[0].avg) {
+      let al = '';
+      for (let i = 0; i < n; i++) al += (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(points[i].avg).toFixed(1);
+      avgPath = '<path d="' + al + '" fill="none" stroke="#e8c46a" stroke-width="1" stroke-opacity="0.9"/>';
+    }
+
     return (
       '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' +
       grid + base +
       '<path d="' + area + '" fill="' + col + '" fill-opacity="0.10" stroke="none"/>' +
       '<path d="' + line + '" fill="none" stroke="' + col + '" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>' +
+      avgPath +
       '</svg>'
     );
   }
@@ -1036,11 +1065,23 @@
       '<div class="lv-sep"></div>' +
       lvHtml(bids, '买');
 
-    const axis = DS.minute.length
+    const axis = DS.period === 'minute' && DS.minute.length
       ? '<div class="d-axis"><span>' + DS.minute[0].t + '</span><span>' +
         DS.minute[Math.floor(DS.minute.length / 2)].t + '</span><span>' +
         DS.minute[DS.minute.length - 1].t + '</span></div>'
       : '';
+
+    const chart =
+      '<div class="d-chart">' +
+      '<div class="d-chart-head">' +
+      '<div class="d-tabs">' +
+      PERIODS.map((p) => '<span data-p="' + p + '" class="' + (DS.period === p ? 'on' : '') + '">' + TAB_NAME[p] + '</span>').join('') +
+      '</div>' +
+      '<span class="d-chart-note">' + (DS.period === 'minute' ? '昨收 ' + fmtN(q.prevClose, dec) : '前复权 · MA5 / MA10 / MA20') + '</span>' +
+      '</div>' +
+      '<div class="d-chart-body" id="dChartBody">' + chartSvg(q, dec) + axis +
+      '<div class="cx-line" id="cxLine"></div><div class="cx-tip" id="cxTip"></div></div>' +
+      '</div>';
 
     $('detail').innerHTML =
       '<div class="d-top"><button class="d-back" id="dBack" title="返回">←</button>' +
@@ -1050,12 +1091,171 @@
       '<span class="d-change"><span class="' + cls + '">' + fmtChg(q.change, dec) + '</span>' +
       '<span class="' + cls + '">' + fmtPct(q.pct) + '</span></span>' +
       '<span class="d-meta">' + esc(q.time) + ' · ' + esc(q.source) + '</span></div>' +
-      '<div class="d-chart"><div class="d-chart-head"><b>分时</b><span>昨收 ' + fmtN(q.prevClose, dec) + '</span></div>' +
-      drawMinute(DS.minute, q.prevClose, rise) + axis + '</div>' +
+      chart +
       '<div class="d-cols"><div class="d-grid">' + grid + '</div><div class="d-book">' + book + '</div></div>';
 
     const back = $('dBack');
     if (back) back.onclick = closeDetail;
+    $('detail').querySelectorAll('.d-tabs span').forEach((el) => {
+      el.onclick = () => switchPeriod(el.dataset.p);
+    });
+    bindChartHover();
+  }
+
+  const PERIODS = ['minute', 'day', 'week', 'month'];
+  const TAB_NAME = { minute: '分时', day: '日K', week: '周K', month: '月K' };
+
+  function chartSvg(q, dec) {
+    if (DS.period === 'minute') {
+      return drawMinute(DS.minute, q.prevClose, q.pct >= 0);
+    }
+    const arr = DS.kline[DS.period];
+    if (arr === undefined) return '<div class="chart-empty">加载中…</div>';
+    if (!arr.length) return '<div class="chart-empty">暂无 K 线数据</div>';
+    return drawKline(arr);
+  }
+
+  async function switchPeriod(p) {
+    DS.period = p;
+    if (p !== 'minute' && DS.kline[p] === undefined) {
+      renderDetail();
+      try {
+        const arr = await INV('get_kline', { symbol: DS.sym, period: p, limit: p === 'day' ? 160 : 90 });
+        DS.kline[p] = arr || [];
+      } catch (e) {
+        DS.kline[p] = [];
+      }
+    }
+    renderDetail();
+  }
+
+  /// 蜡烛图：上半价格、下半成交量，叠加 MA5/MA10/MA20。
+  function drawKline(candles) {
+    const W = 720, H = 134, PX = 4, PY = 6;
+    const volH = 32;
+    const priceH = H - volH - 8;
+    const n = candles.length;
+    let min = Infinity, max = -Infinity, maxV = 0;
+    for (let i = 0; i < n; i++) {
+      const c = candles[i];
+      if (c.low < min) min = c.low;
+      if (c.high > max) max = c.high;
+      if (c.volume > maxV) maxV = c.volume;
+    }
+    if (!isFinite(min) || !isFinite(max) || max <= min || n < 2) {
+      return '<div class="chart-empty">暂无 K 线数据</div>';
+    }
+    const pad = (max - min) * 0.06;
+    min -= pad; max += pad;
+    const step = (W - PX * 2) / n;
+    const bw = Math.max(1.4, step * 0.62);
+    const x = (i) => PX + step * (i + 0.5);
+    const y = (v) => PY + ((max - v) / (max - min)) * (priceH - PY);
+    const yv = (v) => H - (maxV ? (v / maxV) * volH : 0);
+    const upC = cssVar('--pos'), downC = cssVar('--neg');
+
+    let bars = '';
+    for (let i = 0; i < n; i++) {
+      const c = candles[i];
+      const col = c.close >= c.open ? upC : downC;
+      const xc = x(i);
+      bars += '<line x1="' + xc.toFixed(1) + '" y1="' + y(c.high).toFixed(1) + '" x2="' + xc.toFixed(1) + '" y2="' + y(c.low).toFixed(1) + '" stroke="' + col + '" stroke-width="1"/>';
+      const yo = y(c.open), yc = y(c.close);
+      const top = Math.min(yo, yc);
+      const hgt = Math.max(1, Math.abs(yc - yo));
+      bars += '<rect x="' + (xc - bw / 2).toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + hgt.toFixed(1) + '" fill="' + col + '"/>';
+      bars += '<rect x="' + (xc - bw / 2).toFixed(1) + '" y="' + yv(c.volume).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(0.5, H - yv(c.volume)).toFixed(1) + '" fill="' + col + '" fill-opacity="0.5"/>';
+    }
+
+    const ma = (k, color) => {
+      const pts = [];
+      for (let i = 0; i < n; i++) {
+        if (i < k - 1) continue;
+        let sum = 0;
+        for (let j = 0; j < k; j++) sum += candles[i - j].close;
+        pts.push(x(i).toFixed(1) + ' ' + y(sum / k).toFixed(1));
+      }
+      return pts.length > 1
+        ? '<polyline points="' + pts.join(',') + '" fill="none" stroke="' + color + '" stroke-width="1" stroke-opacity="0.85"/>'
+        : '';
+    };
+
+    let grid = '';
+    for (let i = 0; i <= 3; i++) {
+      const gy = (PY + (i / 3) * (priceH - PY)).toFixed(1);
+      grid += '<line x1="' + PX + '" y1="' + gy + '" x2="' + (W - PX) + '" y2="' + gy + '" stroke="#24242b" stroke-width="1"/>';
+    }
+
+    return (
+      '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' +
+      grid + bars + ma(5, '#e8c46a') + ma(10, '#6aa8ff') + ma(20, '#b07ae0') + '</svg>'
+    );
+  }
+
+  function bindChartHover() {
+    const body = $('dChartBody');
+    const line = $('cxLine');
+    const tip = $('cxTip');
+    if (!body || !line || !tip) return;
+    const isMinute = DS.period === 'minute';
+    const arr = isMinute ? DS.minute : DS.kline[DS.period] || [];
+    if (arr.length < 2) return;
+    const q = DS.data.quote;
+    const sym = q.symbol;
+    const ins = S.data.instruments.find((i) => i.symbol === sym) || {};
+    const dec = ins.kind === 'etf' ? 3 : sym.startsWith('hk') ? 3 : 2;
+
+    body.onmousemove = (e) => {
+      const r = body.getBoundingClientRect();
+      const ratio = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+      const i = Math.round(ratio * (arr.length - 1));
+      const px = (i / (arr.length - 1)) * r.width;
+      line.style.display = 'block';
+      line.style.left = px.toFixed(0) + 'px';
+      tip.style.display = 'block';
+      tip.style.left = Math.min(px + 12, r.width - 158).toFixed(0) + 'px';
+      if (isMinute) {
+        const p = arr[i];
+        const pct = q.prevClose ? ((p.price - q.prevClose) / q.prevClose) * 100 : 0;
+        tip.innerHTML = '<b>' + p.t + '</b> ' + p.price.toFixed(dec) + '<br>' + fmtPct(pct);
+      } else {
+        const c = arr[i];
+        tip.innerHTML =
+          '<b>' + c.date + '</b><br>开 ' + c.open.toFixed(2) + '  收 ' + c.close.toFixed(2) +
+          '<br>高 ' + c.high.toFixed(2) + '  低 ' + c.low.toFixed(2);
+      }
+    };
+    body.onmouseleave = () => {
+      line.style.display = 'none';
+      tip.style.display = 'none';
+    };
+  }
+
+  // ---------- 大盘指数 ----------
+  const INDEXES = ['sh000001', 'sz399001', 'sz399006', 'hkHSI'];
+
+  function renderIndexes(qs) {
+    const box = $('indexbar');
+    if (!box || !qs || !qs.length) return;
+    const map = {};
+    qs.forEach((q) => (map[q.symbol] = q));
+    box.innerHTML = INDEXES.map((sym) => {
+      const q = map[sym];
+      if (!q) return '';
+      const cls = pctCls(q.pct);
+      return (
+        '<div class="idx"><span class="n">' + esc(q.name) + '</span>' +
+        '<span class="v ' + cls + '">' + q.price.toFixed(2) + '</span>' +
+        '<span class="p ' + cls + '">' + fmtPct(q.pct) + '</span></div>'
+      );
+    }).join('');
+  }
+
+  async function refreshIndexes() {
+    try {
+      const qs = await INV('get_quotes', { symbols: INDEXES });
+      renderIndexes(qs);
+    } catch (e) {}
   }
 
   // ---------- 启动 ----------

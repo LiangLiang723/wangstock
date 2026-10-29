@@ -277,4 +277,18 @@ pub struct Detail {
 pub struct MinutePoint {
     pub t: String,
     pub price: f64,
+    /// 当日累计成交均价（VWAP）
+    pub avg: f64,
+}
+
+/// 一根 K 线（前复权）
+#[derive(Serialize, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Candle {
+    pub date: String,
+    pub open: f64,
+    pub close: f64,
+    pub high: f64,
+    pub low: f64,
+    pub volume: f64,
 }
