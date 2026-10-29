@@ -1,0 +1,29 @@
+# ---- 构建产物 ----
+/src-tauri/target/
+/src-tauri/gen/schemas/
+/dist/
+/node_modules/
+/wangstock.exe
+/QuoteDesk.exe
+
+# ---- 本地数据与日志 ----
+*.log
+data.json
+data.bak
+data.tmp
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- 凭据 ----
+.env
+.env.*
+*.pem
+*.p12
+*.pfx
+id_rsa*
