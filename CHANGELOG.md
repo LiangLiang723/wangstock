@@ -4,6 +4,25 @@
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-29
+
+### 新增
+
+- 个股详情支持 K 线：日 / 周 / 月切换，含成交量柱与 MA5 / MA10 / MA20
+- 分时图增加当日均价线（VWAP）
+- 分时与 K 线支持十字光标，悬停查看时间、价格或单根 K 线的开收高低
+- 顶部大盘指数条：上证指数、深证成指、创业板指、恒生指数
+- 详情页键盘操作：Esc 返回列表，↑ / ↓ 切换个股
+
+### 修复
+
+- 托盘图标提示文字在部分环境下渲染为乱码，改为纯 ASCII 提示
+- 详情页内容超出窗口高度，导致五档盘口底部被裁切
+
+### 变更
+
+- 详情页图表区改为可切换标签，压缩纵向布局以适配 640px 窗口
+
 ## [1.0.0] - 2026-10-29
 
 首个可发布版本。
@@ -22,5 +41,6 @@
 - 行情数据来自公开接口，仅供个人参考，不构成投资建议
 - 港股为延迟行情
 
-[Unreleased]: https://github.com/LiangLiang723/wangstock/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/LiangLiang723/wangstock/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.0
 [1.0.0]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.0.0

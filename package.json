@@ -1,7 +1,7 @@
 {
   "name": "wangstock",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "轻量自选行情桌面端",
   "scripts": {
     "tauri": "tauri",
