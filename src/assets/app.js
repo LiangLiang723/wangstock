@@ -535,15 +535,21 @@
       if (b) b.onclick = () => addSymbolDirect(q.trim());
       return;
     }
+    const KIND_LABEL = { etf: 'ETF', index: '指数', fund: '场外', stock: '' };
     box.innerHTML = S.hits
-      .map(
-        (h, i) =>
+      .map((h, i) => {
+        const kd = KIND_LABEL[h.kind] || '';
+        const owned = (S.data.instruments || []).some((x) => x.symbol === h.symbol);
+        return (
           '<div class="hit' + (i === S.hitSel ? ' sel' : '') + '" data-i="' + i + '">' +
+          (kd ? '<span class="kd">' + kd + '</span>' : '') +
           '<span class="nm">' + esc(h.name) + '</span>' +
           '<span class="mk">' + esc(h.market) + '</span>' +
           '<span class="cd">' + esc(h.code) + '</span>' +
+          (owned ? '<span class="own">已添加</span>' : '') +
           '</div>'
-      )
+        );
+      })
       .join('');
     box.querySelectorAll('.hit').forEach((el) => {
       el.onmouseenter = () => {
@@ -563,6 +569,11 @@
     const target = S.group === 'all' ? firstWatchGroup() : S.group;
     if (!target) {
       toast('请先创建一个自选分组');
+      return;
+    }
+    const already = S.data.members.some((m) => m.groupId === target && m.symbol === sym);
+    if (already) {
+      toast((name || sym) + ' 已在该分组');
       return;
     }
     try {
