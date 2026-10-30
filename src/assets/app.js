@@ -13,6 +13,7 @@
     detailSym: null,
     sortKey: null,
     sortDir: 1,
+    rowSig: null,
     paused: false,
     lastUpdate: null,
     source: '',
@@ -25,6 +26,14 @@
   };
 
   const $ = (id) => document.getElementById(id);
+
+  // IPC 本身不设超时，后端异常时 await 会一直挂住，轮询就此停摆。
+  function withTimeout(promise, ms, label) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(label + '超时')), ms)),
+    ]);
+  }
   const esc = (s) =>
     String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -229,6 +238,13 @@
     }
 
     const list = sortedSymbols(syms);
+    const sig = list.join(',') + '|' + s.showAmount + s.showRange + '|' + (S.sortKey || '') + S.sortDir;
+    if (S.rowSig === sig && body.children.length === list.length) {
+      updateRows(list);
+      renderTitle();
+      return;
+    }
+    S.rowSig = sig;
     body.innerHTML = list
       .map((sym) => {
         const q = S.quotes[sym];
@@ -240,25 +256,65 @@
         const pct = q ? fmtPct(q.pct) : '—';
         const pos = q && q.high > q.low ? Math.max(0, Math.min(100, ((q.price - q.low) / (q.high - q.low)) * 100)) : 50;
         const range = s.showRange
-          ? '<div class="range" title="' + (q ? '今低 ' + q.low.toFixed(d) + ' · 今高 ' + q.high.toFixed(d) : '') + '"><em class="' + cls + '" style="left:' + pos.toFixed(1) + '%"></em></div>'
+          ? '<div class="range" title="' + (q ? '今低 ' + q.low.toFixed(d) + ' · 今高 ' + q.high.toFixed(d) : '') + '"><em class="js-dot ' + cls + '" style="left:' + pos.toFixed(1) + '%"></em></div>'
           : '';
-        const amt = s.showAmount ? '<div class="num">' + (q ? fmtAmt(q.amount) : '—') + '</div>' : '';
+        const amt = s.showAmount ? '<div class="num js-amt">' + (q ? fmtAmt(q.amount) : '—') + '</div>' : '';
         const st = q ? q.status : 'closed';
         return (
           '<div class="row" draggable="true" data-symbol="' + esc(sym) + '">' +
           '<div class="c-name"><span class="nm">' + esc(ins.name) + '</span>' +
           '<span class="cd">' + esc(ins.code) + '</span>' +
           '<span class="mk">' + esc(ins.market) + '</span></div>' +
-          '<div class="num ' + cls + '">' + price + '</div>' +
-          '<div class="num ' + cls + '">' + chg + '</div>' +
-          '<div class="num"><span class="pct ' + cls + '">' + pct + '</span></div>' +
+          '<div class="num js-price ' + cls + '">' + price + '</div>' +
+          '<div class="num js-chg ' + cls + '">' + chg + '</div>' +
+          '<div class="num"><span class="pct js-pct ' + cls + '">' + pct + '</span></div>' +
           range + amt +
-          '<div class="num"><span class="tag ' + st + '">' + (STATUS_TEXT[st] || st) + '</span></div>' +
+          '<div class="num"><span class="tag js-tag ' + st + '">' + (STATUS_TEXT[st] || st) + '</span></div>' +
           '</div>'
         );
       })
       .join('');
     renderTitle();
+  }
+
+  function updateRows(list) {
+    const body = $('tbody');
+    for (let i = 0; i < list.length; i++) {
+      const sym = list[i];
+      const q = S.quotes[sym];
+      const row = body.children[i];
+      if (!row || !q) continue;
+      const d = DEC(sym);
+      const cls = pctCls(q.pct);
+      const p = row.querySelector('.js-price');
+      if (p) {
+        p.textContent = fmtPrice(q.price, d);
+        p.className = 'num js-price ' + cls;
+      }
+      const c = row.querySelector('.js-chg');
+      if (c) {
+        c.textContent = fmtChg(q.change, d);
+        c.className = 'num js-chg ' + cls;
+      }
+      const pc = row.querySelector('.js-pct');
+      if (pc) {
+        pc.textContent = fmtPct(q.pct);
+        pc.className = 'pct js-pct ' + cls;
+      }
+      const amt = row.querySelector('.js-amt');
+      if (amt) amt.textContent = fmtAmt(q.amount);
+      const dot = row.querySelector('.js-dot');
+      if (dot) {
+        const pos = q.high > q.low ? Math.max(0, Math.min(100, ((q.price - q.low) / (q.high - q.low)) * 100)) : 50;
+        dot.style.left = pos.toFixed(1) + '%';
+        dot.className = 'js-dot ' + cls;
+      }
+      const tag = row.querySelector('.js-tag');
+      if (tag) {
+        tag.textContent = STATUS_TEXT[q.status] || q.status;
+        tag.className = 'tag js-tag ' + q.status;
+      }
+    }
   }
 
   function renderTitle() {
@@ -317,7 +373,7 @@
       return;
     }
     try {
-      const qs = await INV('get_quotes', { symbols: syms });
+      const qs = await withTimeout(INV('get_quotes', { symbols: syms }), 8000, '行情请求');
       if (qs && qs.length) {
         const map = Object.assign({}, S.quotes);
         qs.forEach((q) => (map[q.symbol] = q));
@@ -718,6 +774,11 @@
     const ins = S.data.instruments.find((i) => i.symbol === sym) || { name: sym };
     const groups = (S.data.groups || []).filter((g) => g.kind === 'watch' && g.id !== S.group);
     const menuItems = [];
+    if (S.group !== 'all') {
+      menuItems.push({ label: '上移', onClick: () => moveRow(sym, -1) });
+      menuItems.push({ label: '下移', onClick: () => moveRow(sym, 1) });
+      menuItems.push({ sep: true });
+    }
     groups.forEach((g) => menuItems.push({ label: '　' + g.name, onClick: () => call('move_symbol', { symbol: sym, fromGroup: S.group, toGroup: g.id }, '已移动') }));
     if (menuItems.length) menuItems.push({ sep: true });
     if (S.group !== 'all') {
@@ -726,6 +787,19 @@
     menuItems.push({ label: '删除自选', danger: true, onClick: () => removeEverywhere(sym, ins.name) });
     showMenu(e.clientX, e.clientY, menuItems.length ? menuItems : [{ label: '无可用操作' }]);
   });
+
+  async function moveRow(sym, delta) {
+    const list = currentSymbols();
+    const i = list.indexOf(sym);
+    const j = i + delta;
+    if (i < 0 || j < 0 || j >= list.length) return;
+    const next = list.slice();
+    next.splice(i, 1);
+    next.splice(j, 0, sym);
+    S.rowSig = null;
+    await call('reorder_symbols', { groupId: S.group, symbols: next });
+    tick();
+  }
 
   async function removeEverywhere(sym, name) {
     const ids = S.data.members.filter((m) => m.symbol === sym).map((m) => m.groupId);
@@ -930,7 +1004,7 @@
     const sym = DS.sym;
     if (!sym) return;
     try {
-      const d = await INV('get_detail', { symbol: sym });
+      const d = await withTimeout(INV('get_detail', { symbol: sym }), 8000, '详情请求');
       if (DS.sym !== sym) return;
       DS.data = d;
       const stale = DS.minuteSym !== sym || Date.now() - DS.minuteAt > 20000;
@@ -1251,11 +1325,17 @@
     }).join('');
   }
 
+  let idxBusy = false;
   async function refreshIndexes() {
+    if (idxBusy) return;
+    idxBusy = true;
     try {
-      const qs = await INV('get_quotes', { symbols: INDEXES });
+      const qs = await withTimeout(INV('get_quotes', { symbols: INDEXES }), 8000, '指数请求');
       renderIndexes(qs);
-    } catch (e) {}
+    } catch (e) {
+    } finally {
+      idxBusy = false;
+    }
   }
 
   // ---------- 启动 ----------
