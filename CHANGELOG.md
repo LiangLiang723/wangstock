@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-10-30
+
+### 修复
+
+- 搜索「通信」等关键词时只返回指数、查不到场内 ETF：接口对 ETF 的类型标记是 `ETF`，而过滤器只认 `GP`/`JJ`/`KJ`/`ZS`，ETF 被整体丢弃
+- 搜索接口返回多段 `v_hint` 时，原解析从第一个引号取到最后一个引号，导致首条字段错位被丢弃
+
+### 变更
+
+- 搜索结果增加类型标签（ETF / 指数 / 场外），已在自选中的标的标注「已添加」
+- 重复添加同一标的时提示「已在该分组」
+
 ## [1.1.1] - 2026-10-30
 
 ### 修复
@@ -59,7 +71,8 @@
 - 行情数据来自公开接口，仅供个人参考，不构成投资建议
 - 港股为延迟行情
 
-[Unreleased]: https://github.com/LiangLiang723/wangstock/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/LiangLiang723/wangstock/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.2
 [1.1.1]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.1
 [1.1.0]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.0
 [1.0.0]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.0.0
