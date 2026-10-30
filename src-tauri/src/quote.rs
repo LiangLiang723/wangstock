@@ -7,10 +7,16 @@ use std::time::Duration;
 const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
+fn agent() -> &'static ureq::Agent {
+    static A: std::sync::OnceLock<ureq::Agent> = std::sync::OnceLock::new();
+    A.get_or_init(|| ureq::AgentBuilder::new().build())
+}
+
 /// 统一走一次 GET，按 GBK 解码（腾讯/新浪行情接口均为 GBK）。
-/// 限制响应体 4MB，防止异常响应把内存打爆。
+/// 限制响应体 4MB，防止异常响应把内存打爆。走共享 Agent，复用连接。
 fn http_get(url: &str, referer: &str, timeout_ms: u64) -> Result<String, String> {
-    let resp = ureq::get(url)
+    let resp = agent()
+        .get(url)
         .set("User-Agent", UA)
         .set("Referer", referer)
         .set("Accept", "*/*")
@@ -306,7 +312,8 @@ pub fn search(query: &str) -> Vec<SearchHit> {
     if q.is_empty() {
         return Vec::new();
     }
-    let text = match ureq::get("https://smartbox.gtimg.cn/s3/")
+    let text = match agent()
+        .get("https://smartbox.gtimg.cn/s3/")
         .query("q", q)
         .query("t", "all")
         .query("c", "1")
@@ -597,4 +604,25 @@ pub fn fetch_kline(symbol: &str, period: &str, limit: usize) -> Result<Vec<Candl
         return Err("该标的暂无K线数据".into());
     }
     Ok(out)
+}
+
+/// 列表缩略图：逐只取当日分时并降采样到约 48 点，只回传价格序列。
+/// 单只失败直接跳过，不影响整批；总数上限 40 只。
+pub fn fetch_sparklines(
+    symbols: &[String],
+) -> std::collections::HashMap<String, Vec<f64>> {
+    let mut out = std::collections::HashMap::new();
+    for sym in symbols.iter().take(40) {
+        let Ok(pts) = fetch_minute(sym) else { continue };
+        if pts.len() < 2 {
+            continue;
+        }
+        let step = (pts.len() / 48).max(1);
+        let mut v: Vec<f64> = pts.iter().step_by(step).map(|p| p.price).collect();
+        if let Some(last) = pts.last() {
+            v.push(last.price);
+        }
+        out.insert(sym.clone(), v);
+    }
+    out
 }

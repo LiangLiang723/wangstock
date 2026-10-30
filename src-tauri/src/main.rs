@@ -374,6 +374,16 @@ async fn get_kline(symbol: String, period: String, limit: usize) -> Result<Vec<C
         .map_err(|e| format!("K线任务失败: {}", e))?
 }
 
+/// 列表缩略图数据，网络部分同样放到阻塞线程池。
+#[tauri::command]
+async fn get_sparklines(
+    symbols: Vec<String>,
+) -> Result<std::collections::HashMap<String, Vec<f64>>, String> {
+    tauri::async_runtime::spawn_blocking(move || quote::fetch_sparklines(&symbols))
+        .await
+        .map_err(|e| format!("缩略图任务失败: {}", e))
+}
+
 #[tauri::command]
 fn show_main_cmd(app: tauri::AppHandle) {
     tray::show_main(&app);
@@ -468,6 +478,7 @@ fn main() {
             get_detail,
             get_minute,
             get_kline,
+            get_sparklines,
             show_main_cmd,
             quit_app,
             hide_flyout_cmd,
