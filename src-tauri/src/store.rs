@@ -19,7 +19,10 @@ pub fn new_id(prefix: &str) -> String {
 pub fn load(path: &Path) -> Data {
     match fs::read_to_string(path) {
         Ok(s) => match serde_json::from_str::<Data>(&s) {
-            Ok(d) => d,
+            Ok(mut d) => {
+                d.normalize_order();
+                d
+            }
             Err(_) => {
                 let _ = fs::copy(path, path.with_extension("bak"));
                 Data::default()

@@ -221,6 +221,7 @@ async fn add_symbol(symbol: String, group_id: String, app: tauri::AppHandle) -> 
             sort,
         });
     }
+    d.normalize_order();
     persist(&st, &d)?;
     Ok(d.clone())
 }
@@ -234,6 +235,7 @@ fn remove_symbol(symbol: String, group_id: String, st: State<AppState>) -> Resul
     if !still_used {
         d.instruments.retain(|i| i.symbol != symbol);
     }
+    d.normalize_order();
     persist(&st, &d)?;
     Ok(d.clone())
 }
@@ -277,15 +279,7 @@ fn reorder_symbols(
     st: State<AppState>,
 ) -> Result<Data, String> {
     let mut d = st.data.lock().unwrap();
-    for (i, sym) in symbols.iter().enumerate() {
-        if let Some(m) = d
-            .members
-            .iter_mut()
-            .find(|m| m.group_id == group_id && &m.symbol == sym)
-        {
-            m.sort = i as i64;
-        }
-    }
+    d.apply_reorder(&group_id, &symbols);
     persist(&st, &d)?;
     Ok(d.clone())
 }
