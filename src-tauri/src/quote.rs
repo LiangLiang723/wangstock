@@ -285,11 +285,15 @@ fn unescape_unicode(s: &str) -> String {
 }
 
 fn kind_of(t: &str) -> Option<&'static str> {
-    if t.starts_with("GP") {
-        Some("stock")
-    } else if t.starts_with("JJ") || t.starts_with("KJ") {
+    let u = t.trim();
+    // 腾讯对场内 ETF 的类型标记就是 ETF，股票是 GP-A / GP，指数是 ZS
+    if u == "ETF" || u.starts_with("ETF") {
         Some("etf")
-    } else if t.starts_with("ZS") {
+    } else if u.starts_with("GP") {
+        Some("stock")
+    } else if u.starts_with("JJ") || u.starts_with("KJ") {
+        Some("fund")
+    } else if u.starts_with("ZS") {
         Some("index")
     } else {
         None
@@ -322,15 +326,25 @@ pub fn search(query: &str) -> Vec<SearchHit> {
         Err(_) => return Vec::new(),
     };
 
-    let start = match text.find('"') {
-        Some(i) => i + 1,
-        None => return Vec::new(),
-    };
-    let end = text.rfind('"').unwrap_or(text.len());
-    if end <= start {
+    // 接口可能返回多段 v_hint="..."（首个是推荐项），逐段取出后合并解析，
+    // 否则第一段会与后续内容粘连，导致字段整体错位。
+    let mut body = String::new();
+    for seg in text.split("v_hint=").skip(1) {
+        let Some(q1) = seg.find('"') else { continue };
+        let rest = &seg[q1 + 1..];
+        let Some(q2) = rest.find('"') else { continue };
+        let part = &rest[..q2];
+        if part.is_empty() {
+            continue;
+        }
+        if !body.is_empty() {
+            body.push('^');
+        }
+        body.push_str(part);
+    }
+    if body.is_empty() {
         return Vec::new();
     }
-    let body = &text[start..end];
 
     let mut hits: Vec<SearchHit> = Vec::new();
     for item in body.split('^') {
