@@ -4,6 +4,24 @@
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-30
+
+### 修复
+
+- 行情、详情、分时、K 线、搜索等命令此前在主线程同步执行，一次网络超时会把界面卡住 6–12 秒；改为阻塞线程池执行，主线程保持响应（实测 60 次探测零超时，最差 5ms）
+- 添加自选时持有数据锁发起网络请求，会导致整个界面停顿；改为先查询、后写锁
+- IPC 调用缺少超时，后端异常时轮询会静默停摆；前端增加 8 秒超时保护
+
+### 优化
+
+- 自选列表改为增量更新，行情刷新时只改动数字节点，不再每 3 秒重建整张表
+- 行情请求超时由 6 秒收紧到 4 秒，K 线由 8 秒收紧到 6 秒
+- 指数请求增加重入保护，网络变慢时不会堆积请求
+
+### 新增
+
+- 自选标的支持右键「上移 / 下移」，与拖拽排序并存
+
 ## [1.1.0] - 2026-10-29
 
 ### 新增
@@ -41,6 +59,7 @@
 - 行情数据来自公开接口，仅供个人参考，不构成投资建议
 - 港股为延迟行情
 
-[Unreleased]: https://github.com/LiangLiang723/wangstock/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/LiangLiang723/wangstock/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.1
 [1.1.0]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.0
 [1.0.0]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.0.0
