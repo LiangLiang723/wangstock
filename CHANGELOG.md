@@ -4,6 +4,27 @@
 
 ## [Unreleased]
 
+## [1.1.4] - 2026-10-30
+
+### 修复
+
+- 「全部自选」无法手动排序：此前该视图下不显示上移 / 下移，拖拽还会提示「请先选择一个具体分组」，而后端收到 `group_id="all"` 也匹配不到任何成员，等于完全不可排序
+
+### 新增
+
+- 数据模型增加全局顺序 `order`：「全部自选」使用独立顺序，分组内仍用成员顺序，在哪个视图拖就只改哪个视图
+- 自选列表标题下方提示「拖动行可排序」，解决入口不可发现的问题
+
+### 优化
+
+- 缩略图改为 6 路并发拉取，首屏补齐时间由十余秒降到数秒；并与行情请求并行发起
+- 分组内排序后重新编号 `sort` 为 0..n-1，避免部分列表留下重复值导致顺序不确定
+- 移除未使用的 `price_decimals`，编译不再产生警告
+
+### 测试
+
+- 排序逻辑抽为 `Data::apply_reorder` 纯函数，新增 6 个单元测试覆盖全局排序、分组排序、未知标的、`sort` 连续性与旧数据迁移
+
 ## [1.1.3] - 2026-10-30
 
 ### 新增
@@ -87,7 +108,8 @@
 - 行情数据来自公开接口，仅供个人参考，不构成投资建议
 - 港股为延迟行情
 
-[Unreleased]: https://github.com/LiangLiang723/wangstock/compare/v1.1.3...HEAD
+[Unreleased]: https://github.com/LiangLiang723/wangstock/compare/v1.1.4...HEAD
+[1.1.4]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.4
 [1.1.3]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.3
 [1.1.2]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.2
 [1.1.1]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.1
