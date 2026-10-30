@@ -4,6 +4,22 @@
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-10-30
+
+### 新增
+
+- 自选列表增加「走势」列：当日分时缩略图，按昨收着色并画出基准线，90 秒缓存
+- K 线支持滚轮缩放（以光标位置为锚点）、拖拽平移、双击复位，均线仍按完整数据计算
+
+### 优化
+
+- HTTP 请求改为共享连接池，复用 TCP/TLS 握手，批量行情与缩略图加载明显加快
+- 表格列宽改用 CSS 变量统一定义，避免表头与数据行列数不一致
+
+### 修复
+
+- 列表新增列后状态标签换行、行高被撑高的问题
+
 ## [1.1.2] - 2026-10-30
 
 ### 修复
@@ -71,7 +87,8 @@
 - 行情数据来自公开接口，仅供个人参考，不构成投资建议
 - 港股为延迟行情
 
-[Unreleased]: https://github.com/LiangLiang723/wangstock/compare/v1.1.2...HEAD
+[Unreleased]: https://github.com/LiangLiang723/wangstock/compare/v1.1.3...HEAD
+[1.1.3]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.3
 [1.1.2]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.2
 [1.1.1]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.1
 [1.1.0]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.0
