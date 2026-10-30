@@ -1,4 +1,4 @@
-use crate::model::{market_of, Candle, Detail, Level, MinutePoint, Quote, SearchHit};
+use crate::model::{Candle, Detail, Level, MinutePoint, Quote, SearchHit};
 use chrono::{Datelike, Local, Timelike, Weekday};
 use encoding_rs::GBK;
 use std::io::Read;
@@ -436,15 +436,6 @@ pub fn normalize_symbol(input: &str) -> Option<String> {
     Some(format!("{}{}", m, s))
 }
 
-pub fn price_decimals(symbol: &str) -> usize {
-    let m = market_of(symbol);
-    if m == "HK" {
-        3
-    } else {
-        2
-    }
-}
-
 /// 个股详情：一次请求同时拿到行情、五档盘口和估值指标。
 /// 港股与 A 股字段位置一致，越界统一按 0 处理，保证任何一只都能渲染。
 pub fn fetch_detail(symbol: &str) -> Result<Detail, String> {
@@ -611,18 +602,40 @@ pub fn fetch_kline(symbol: &str, period: &str, limit: usize) -> Result<Vec<Candl
 pub fn fetch_sparklines(
     symbols: &[String],
 ) -> std::collections::HashMap<String, Vec<f64>> {
-    let mut out = std::collections::HashMap::new();
-    for sym in symbols.iter().take(40) {
-        let Ok(pts) = fetch_minute(sym) else { continue };
-        if pts.len() < 2 {
-            continue;
-        }
-        let step = (pts.len() / 48).max(1);
-        let mut v: Vec<f64> = pts.iter().step_by(step).map(|p| p.price).collect();
-        if let Some(last) = pts.last() {
-            v.push(last.price);
-        }
-        out.insert(sym.clone(), v);
+    use std::sync::{Arc, Mutex};
+
+    let syms: Vec<String> = symbols.iter().take(40).cloned().collect();
+    if syms.is_empty() {
+        return std::collections::HashMap::new();
     }
-    out
+    // 逐只串行请求要十几秒，改为 6 路并发：同一批自选通常 2 秒内补齐。
+    let workers = syms.len().min(6).max(1);
+    let out = Arc::new(Mutex::new(std::collections::HashMap::new()));
+    let mut handles = Vec::with_capacity(workers);
+
+    for w in 0..workers {
+        let chunk: Vec<String> = syms.iter().skip(w).step_by(workers).cloned().collect();
+        let sink = Arc::clone(&out);
+        handles.push(std::thread::spawn(move || {
+            for sym in chunk {
+                let Ok(pts) = fetch_minute(&sym) else { continue };
+                if pts.len() < 2 {
+                    continue;
+                }
+                let step = (pts.len() / 48).max(1);
+                let mut v: Vec<f64> = pts.iter().step_by(step).map(|p| p.price).collect();
+                if let Some(last) = pts.last() {
+                    v.push(last.price);
+                }
+                sink.lock().unwrap().insert(sym, v);
+            }
+        }));
+    }
+    for h in handles {
+        let _ = h.join();
+    }
+
+    let guard = out.lock().unwrap();
+    guard.clone()
 }
+

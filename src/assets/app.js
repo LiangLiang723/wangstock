@@ -14,6 +14,7 @@
     sortKey: null,
     sortDir: 1,
     rowSig: null,
+    justDragged: false,
     spark: {},
     sparkBusy: false,
     paused: false,
@@ -150,8 +151,18 @@
   function currentSymbols() {
     if (!S.data) return [];
     if (S.group === 'all') {
+      // 全局顺序由 order 维护，用户可以在「全部自选」里直接拖拽排序。
+      const watch = new Set(S.data.groups.filter((g) => g.kind === 'watch').map((g) => g.id));
+      const valid = new Set(S.data.members.filter((m) => watch.has(m.groupId)).map((m) => m.symbol));
       const seen = new Set();
       const out = [];
+      (S.data.order || []).forEach((sym) => {
+        if (valid.has(sym) && !seen.has(sym)) {
+          seen.add(sym);
+          out.push(sym);
+        }
+      });
+      // 兜底：order 尚未包含的新标的按分组顺序补到末尾
       const groups = S.data.groups.filter((g) => g.kind === 'watch').sort((a, b) => a.sort - b.sort);
       for (const g of groups) {
         S.data.members
@@ -388,13 +399,14 @@
 
   function renderTitle() {
     const n = currentSymbols().length;
+    const hint = n > 1 ? ' · 拖动行可排序' : '';
     if (S.group === 'all') {
       $('crumbTitle').textContent = '全部自选';
-      $('crumbSub').textContent = n + ' 个标的';
+      $('crumbSub').textContent = n + ' 个标的' + hint;
     } else {
       const g = groupById(S.group);
       $('crumbTitle').textContent = g ? g.name : '—';
-      $('crumbSub').textContent = (g && g.kind === 'industry' ? '行业 · ' : '') + n + ' 个标的';
+      $('crumbSub').textContent = (g && g.kind === 'industry' ? '行业 · ' : '') + n + ' 个标的' + hint;
     }
   }
 
@@ -441,6 +453,8 @@
       schedule();
       return;
     }
+    // 与行情并行发起，别等报价回来再排队
+    refreshSparklines(syms);
     try {
       const qs = await withTimeout(INV('get_quotes', { symbols: syms }), 8000, '行情请求');
       if (qs && qs.length) {
@@ -455,7 +469,6 @@
         renderRows();
         renderStatus();
       }
-      refreshSparklines(syms);
     } catch (e) {
       S.error = String(e && e.message ? e.message : e);
       renderStatus();
@@ -844,6 +857,7 @@
   $('tbody').addEventListener('click', (e) => {
     const row = e.target.closest('.row');
     if (!row) return;
+    if (S.justDragged) return;
     openDetail(row.dataset.symbol);
   });
 
@@ -855,11 +869,9 @@
     const ins = S.data.instruments.find((i) => i.symbol === sym) || { name: sym };
     const groups = (S.data.groups || []).filter((g) => g.kind === 'watch' && g.id !== S.group);
     const menuItems = [];
-    if (S.group !== 'all') {
-      menuItems.push({ label: '上移', onClick: () => moveRow(sym, -1) });
-      menuItems.push({ label: '下移', onClick: () => moveRow(sym, 1) });
-      menuItems.push({ sep: true });
-    }
+    menuItems.push({ label: '上移', onClick: () => moveRow(sym, -1) });
+    menuItems.push({ label: '下移', onClick: () => moveRow(sym, 1) });
+    menuItems.push({ sep: true });
     groups.forEach((g) => menuItems.push({ label: '　' + g.name, onClick: () => call('move_symbol', { symbol: sym, fromGroup: S.group, toGroup: g.id }, '已移动') }));
     if (menuItems.length) menuItems.push({ sep: true });
     if (S.group !== 'all') {
@@ -870,6 +882,12 @@
   });
 
   async function moveRow(sym, delta) {
+    if (S.sortKey) {
+      // 按列排序时列表顺序是实时算出来的，手动移动没有意义，先恢复自定义顺序。
+      S.sortKey = null;
+      S.sortDir = 1;
+      renderHead();
+    }
     const list = currentSymbols();
     const i = list.indexOf(sym);
     const j = i + delta;
@@ -878,7 +896,8 @@
     next.splice(i, 1);
     next.splice(j, 0, sym);
     S.rowSig = null;
-    await call('reorder_symbols', { groupId: S.group, symbols: next });
+    const ok = await call('reorder_symbols', { groupId: S.group, symbols: next });
+    if (ok) toast(delta < 0 ? '已上移' : '已下移');
     tick();
   }
 
@@ -952,7 +971,17 @@
   $('tbody').addEventListener('dragstart', (e) => {
     const row = e.target.closest('.row');
     if (!row) return;
+    if (S.sortKey) {
+      S.sortKey = null;
+      S.sortDir = 1;
+      renderHead();
+      renderRows();
+      e.preventDefault();
+      toast('已切回自定义顺序，请再拖一次');
+      return;
+    }
     S.dragging = row.dataset.symbol;
+    S.justDragged = false;
     row.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
     try { e.dataTransfer.setData('text/plain', S.dragging); } catch (_) {}
@@ -960,6 +989,8 @@
 
   $('tbody').addEventListener('dragend', () => {
     S.dragging = null;
+    S.justDragged = true;
+    setTimeout(() => { S.justDragged = false; }, 120);
     document.querySelectorAll('.row.dragging').forEach((r) => r.classList.remove('dragging'));
     document.querySelectorAll('.row.drop-above,.row.drop-below').forEach((r) => r.classList.remove('drop-above', 'drop-below'));
     document.querySelectorAll('.grp.drag-over').forEach((r) => r.classList.remove('drag-over'));
@@ -981,14 +1012,12 @@
     const target = row.dataset.symbol;
     const moving = S.dragging;
     if (target === moving) return;
-    if (S.group === 'all') {
-      toast('请先选择一个具体分组再排序');
-      return;
-    }
     const list = currentSymbols().filter((s) => s !== moving);
     const at = list.indexOf(target);
     const before = row.classList.contains('drop-above');
+    if (at < 0) return;
     list.splice(before ? at : at + 1, 0, moving);
+    S.rowSig = null;
     await call('reorder_symbols', { groupId: S.group, symbols: list });
     tick();
   });
