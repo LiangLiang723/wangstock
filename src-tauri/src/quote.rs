@@ -638,4 +638,3 @@ pub fn fetch_sparklines(
     let guard = out.lock().unwrap();
     guard.clone()
 }
-
