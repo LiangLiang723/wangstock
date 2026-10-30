@@ -168,14 +168,32 @@ fn move_group(
 }
 
 #[tauri::command]
-fn add_symbol(symbol: String, group_id: String, st: State<AppState>) -> Result<Data, String> {
+async fn add_symbol(symbol: String, group_id: String, app: tauri::AppHandle) -> Result<Data, String> {
     let sym = quote::normalize_symbol(&symbol).ok_or_else(|| "无法识别的代码格式".to_string())?;
+
+    // 需要补名称时先发网络请求，此时不持有数据锁。
+    let need_lookup = {
+        let st = app.state::<AppState>();
+        let d = st.data.lock().unwrap();
+        !d.instruments.iter().any(|i| i.symbol == sym)
+    };
+    let looked = if need_lookup {
+        let s2 = sym.clone();
+        tauri::async_runtime::spawn_blocking(move || quote::lookup_name(&s2))
+            .await
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
+
+    let st = app.state::<AppState>();
     let mut d = st.data.lock().unwrap();
     if !d.groups.iter().any(|g| g.id == group_id) {
         return Err("目标分组不存在".into());
     }
     if !d.instruments.iter().any(|i| i.symbol == sym) {
-        let (name, kind) = match quote::lookup_name(&sym) {
+        let (name, kind) = match looked {
             Some((n, k)) => (n, k),
             None => (code_of(&sym), "stock".to_string()),
         };
@@ -281,65 +299,79 @@ fn update_settings(settings: Settings, st: State<AppState>) -> Result<Data, Stri
 }
 
 #[tauri::command]
-fn search_symbols(query: String) -> Vec<SearchHit> {
-    quote::search(&query)
+async fn search_symbols(query: String) -> Vec<SearchHit> {
+    tauri::async_runtime::spawn_blocking(move || quote::search(&query))
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]
-fn get_quotes(symbols: Vec<String>, st: State<AppState>) -> Result<Vec<Quote>, String> {
+async fn get_quotes(symbols: Vec<String>, app: tauri::AppHandle) -> Result<Vec<Quote>, String> {
     if symbols.is_empty() {
         return Ok(Vec::new());
     }
-    let key = symbols.join(",");
-    {
-        let c = st.cache.lock().unwrap();
-        if let Some((k, t, q)) = c.as_ref() {
-            if k == &key && t.elapsed().as_millis() < 700 {
-                return Ok(q.clone());
-            }
-        }
-    }
-    match quote::fetch(&symbols) {
-        Ok(v) => {
-            *st.cache.lock().unwrap() = Some((key, Instant::now(), v.clone()));
-            Ok(v)
-        }
-        Err(e) => {
-            // 网络彻底失败时回落到上一次成功的数据，并把状态标成 stale，
-            // 让界面明确告诉用户"这不是最新价"。
+    // 网络请求放到阻塞线程池，主线程保持响应；否则一次超时就会把界面卡住数秒。
+    tauri::async_runtime::spawn_blocking(move || {
+        let st = app.state::<AppState>();
+        let key = symbols.join(",");
+        {
             let c = st.cache.lock().unwrap();
-            if let Some((_, _, q)) = c.as_ref() {
-                let want: std::collections::HashSet<&String> = symbols.iter().collect();
-                let mut fb: Vec<Quote> = q
-                    .iter()
-                    .filter(|x| want.contains(&x.symbol))
-                    .cloned()
-                    .collect();
-                for x in &mut fb {
-                    x.status = "stale".into();
-                }
-                if !fb.is_empty() {
-                    return Ok(fb);
+            if let Some((k, t, q)) = c.as_ref() {
+                if k == &key && t.elapsed().as_millis() < 700 {
+                    return Ok(q.clone());
                 }
             }
-            Err(format!("行情获取失败：{}", e))
         }
-    }
+        match quote::fetch(&symbols) {
+            Ok(v) => {
+                *st.cache.lock().unwrap() = Some((key, Instant::now(), v.clone()));
+                Ok(v)
+            }
+            Err(e) => {
+                // 网络彻底失败时回落到上一次成功的数据，并把状态标成 stale，
+                // 让界面明确告诉用户"这不是最新价"。
+                let c = st.cache.lock().unwrap();
+                if let Some((_, _, q)) = c.as_ref() {
+                    let want: std::collections::HashSet<&String> = symbols.iter().collect();
+                    let mut fb: Vec<Quote> = q
+                        .iter()
+                        .filter(|x| want.contains(&x.symbol))
+                        .cloned()
+                        .collect();
+                    for x in &mut fb {
+                        x.status = "stale".into();
+                    }
+                    if !fb.is_empty() {
+                        return Ok(fb);
+                    }
+                }
+                Err(format!("行情获取失败：{}", e))
+            }
+        }
+    })
+    .await
+    .map_err(|e| format!("行情任务失败: {}", e))?
 }
 
 #[tauri::command]
-fn get_detail(symbol: String) -> Result<Detail, String> {
-    quote::fetch_detail(&symbol)
+async fn get_detail(symbol: String) -> Result<Detail, String> {
+    tauri::async_runtime::spawn_blocking(move || quote::fetch_detail(&symbol))
+        .await
+        .map_err(|e| format!("详情任务失败: {}", e))?
 }
 
 #[tauri::command]
-fn get_minute(symbol: String) -> Result<Vec<MinutePoint>, String> {
-    quote::fetch_minute(&symbol)
+async fn get_minute(symbol: String) -> Result<Vec<MinutePoint>, String> {
+    tauri::async_runtime::spawn_blocking(move || quote::fetch_minute(&symbol))
+        .await
+        .map_err(|e| format!("分时任务失败: {}", e))?
 }
 
 #[tauri::command]
-fn get_kline(symbol: String, period: String, limit: usize) -> Result<Vec<Candle>, String> {
-    quote::fetch_kline(&symbol, &period, limit)
+async fn get_kline(symbol: String, period: String, limit: usize) -> Result<Vec<Candle>, String> {
+    tauri::async_runtime::spawn_blocking(move || quote::fetch_kline(&symbol, &period, limit))
+        .await
+        .map_err(|e| format!("K线任务失败: {}", e))?
 }
 
 #[tauri::command]

@@ -226,7 +226,7 @@ fn fetch_tencent(symbols: &[String]) -> Result<Vec<Quote>, String> {
     let mut out = Vec::new();
     for chunk in symbols.chunks(60) {
         let url = format!("https://qt.gtimg.cn/q={}", chunk.join(","));
-        let text = http_get(&url, "https://gu.qq.com/", 6000)?;
+        let text = http_get(&url, "https://gu.qq.com/", 4000)?;
         out.extend(parse_tencent(&text));
     }
     if out.is_empty() {
@@ -239,7 +239,7 @@ fn fetch_sina(symbols: &[String]) -> Result<Vec<Quote>, String> {
     let mut out = Vec::new();
     for chunk in symbols.chunks(60) {
         let url = format!("https://hq.sinajs.cn/list={}", chunk.join(","));
-        let text = http_get(&url, "https://finance.sina.com.cn", 6000)?;
+        let text = http_get(&url, "https://finance.sina.com.cn", 4000)?;
         out.extend(parse_sina(&text));
     }
     if out.is_empty() {
@@ -429,7 +429,7 @@ pub fn price_decimals(symbol: &str) -> usize {
 pub fn fetch_detail(symbol: &str) -> Result<Detail, String> {
     let sym = symbol.trim().to_lowercase();
     let url = format!("https://qt.gtimg.cn/q={}", sym);
-    let text = http_get(&url, "https://gu.qq.com/", 6000)?;
+    let text = http_get(&url, "https://gu.qq.com/", 4000)?;
 
     let quote = parse_tencent(&text)
         .into_iter()
@@ -478,7 +478,7 @@ pub fn fetch_minute(symbol: &str) -> Result<Vec<MinutePoint>, String> {
         "https://web.ifzq.gtimg.cn/appstock/app/minute/query?code={}",
         sym
     );
-    let text = http_get(&url, "https://gu.qq.com/", 6000)?;
+    let text = http_get(&url, "https://gu.qq.com/", 4000)?;
     let v: serde_json::Value =
         serde_json::from_str(&text).map_err(|e| format!("分时数据解析失败: {}", e))?;
 
@@ -537,7 +537,7 @@ pub fn fetch_kline(symbol: &str, period: &str, limit: usize) -> Result<Vec<Candl
         "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={},{},,,{},qfq",
         sym, p, n
     );
-    let text = http_get(&url, "https://gu.qq.com/", 8000)?;
+    let text = http_get(&url, "https://gu.qq.com/", 6000)?;
     let v: serde_json::Value =
         serde_json::from_str(&text).map_err(|e| format!("K线数据解析失败: {}", e))?;
 
