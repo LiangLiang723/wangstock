@@ -14,6 +14,8 @@
     sortKey: null,
     sortDir: 1,
     rowSig: null,
+    spark: {},
+    sparkBusy: false,
     paused: false,
     lastUpdate: null,
     source: '',
@@ -64,6 +66,70 @@
     if (v >= 1e4) return (v / 1e4).toFixed(1) + '万';
     return v.toFixed(0);
   }
+  function sparkSvg(data, prev) {
+    const W = 60, H = 18, P = 1;
+    if (!data || data.length < 2) return '';
+    let min = Math.min.apply(null, data);
+    let max = Math.max.apply(null, data);
+    if (prev) {
+      min = Math.min(min, prev);
+      max = Math.max(max, prev);
+    }
+    if (max - min < 1e-9) max = min + 0.01;
+    const n = data.length;
+    const x = (i) => P + (i / (n - 1)) * (W - P * 2);
+    const y = (v) => H - P - ((v - min) / (max - min)) * (H - P * 2);
+    let d = '';
+    for (let i = 0; i < n; i++) d += (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(data[i]).toFixed(1);
+    const last = data[n - 1];
+    const col = prev ? (last >= prev ? cssVar('--pos') : cssVar('--neg')) : cssVar('--text3');
+    let base = '';
+    if (prev) {
+      const by = y(prev).toFixed(1);
+      base = '<line x1="' + P + '" y1="' + by + '" x2="' + (W - P) + '" y2="' + by + '" stroke="#2e2e38" stroke-width="0.8"/>';
+    }
+    return (
+      '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + base +
+      '<path d="' + d + '" fill="none" stroke="' + col + '" stroke-width="1.2"/></svg>'
+    );
+  }
+
+  function updateSparks(list) {
+    const body = $('tbody');
+    for (let i = 0; i < list.length; i++) {
+      const sym = list[i];
+      const row = body.children[i];
+      const cell = row && row.querySelector('.js-spark');
+      if (!cell) continue;
+      const sp = S.spark[sym];
+      const q = S.quotes[sym];
+      if (sp && sp.data && q) cell.innerHTML = sparkSvg(sp.data, q.prevClose);
+    }
+  }
+
+  async function refreshSparklines(syms) {
+    if (S.sparkBusy) return;
+    const now = Date.now();
+    const need = syms.filter((x) => !S.spark[x] || now - S.spark[x].at > 90000);
+    if (!need.length) return;
+    S.sparkBusy = true;
+    try {
+      const map = await withTimeout(
+        INV('get_sparklines', { symbols: need.slice(0, 12) }),
+        20000,
+        '缩略图'
+      );
+      const at = Date.now();
+      Object.keys(map || {}).forEach((k) => {
+        S.spark[k] = { at: at, data: map[k] };
+      });
+      updateSparks(currentSymbols());
+    } catch (e) {
+    } finally {
+      S.sparkBusy = false;
+    }
+  }
+
   function fmtClock(d) {
     const p = (n) => String(n).padStart(2, '0');
     return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
@@ -175,6 +241,7 @@
 
   const COLS = [
     { k: 'name', t: '名称 / 代码', left: true, sort: false },
+    { k: 'spark', t: '走势', sort: false },
     { k: 'price', t: '最新价' },
     { k: 'change', t: '涨跌额' },
     { k: 'pct', t: '涨跌幅' },
@@ -193,12 +260,13 @@
         return '<div class="' + (on ? 'sorted' : '') + '" data-sort="' + (c.sort === false ? '' : c.k) + '">' + c.t + arrow + '</div>';
       })
       .join('');
-    $('thead').style.gridTemplateColumns = gridCols();
+    const cols = gridCols();
+    document.documentElement.style.setProperty('--grid-cols', cols);
   }
 
   function gridCols() {
     const s = S.data.settings;
-    const parts = ['minmax(132px, 1fr)', '88px', '84px', '92px'];
+    const parts = ['minmax(118px, 1fr)', '64px', '88px', '84px', '92px'];
     if (s.showRange) parts.push('92px');
     if (s.showAmount) parts.push('84px');
     parts.push('58px');
@@ -265,6 +333,7 @@
           '<div class="c-name"><span class="nm">' + esc(ins.name) + '</span>' +
           '<span class="cd">' + esc(ins.code) + '</span>' +
           '<span class="mk">' + esc(ins.market) + '</span></div>' +
+          '<div class="spark js-spark">' + (S.spark[sym] ? sparkSvg(S.spark[sym].data, q ? q.prevClose : 0) : '') + '</div>' +
           '<div class="num js-price ' + cls + '">' + price + '</div>' +
           '<div class="num js-chg ' + cls + '">' + chg + '</div>' +
           '<div class="num"><span class="pct js-pct ' + cls + '">' + pct + '</span></div>' +
@@ -386,6 +455,7 @@
         renderRows();
         renderStatus();
       }
+      refreshSparklines(syms);
     } catch (e) {
       S.error = String(e && e.message ? e.message : e);
       renderStatus();
@@ -965,7 +1035,7 @@
 
 
   // ---------- 个股详情 ----------
-  const DS = { sym: null, data: null, minute: [], minuteSym: null, minuteAt: 0, period: 'minute', kline: {} };
+  const DS = { sym: null, data: null, minute: [], minuteSym: null, minuteAt: 0, period: 'minute', kline: {}, kview: { start: 0, count: 120 } };
 
   const cssVar = (n) => getComputedStyle(document.body).getPropertyValue(n).trim();
   const fmtN = (v, d) => (v == null || v === 0 ? '—' : v.toFixed(d));
@@ -989,6 +1059,7 @@
     DS.minuteSym = null;
     DS.period = 'minute';
     DS.kline = {};
+    DS.kview = { start: 0, count: 120 };
     S.view = 'detail';
     S.detailSym = sym;
     document.querySelector('.content').classList.add('detail-mode');
@@ -1162,9 +1233,9 @@
       '<div class="d-tabs">' +
       PERIODS.map((p) => '<span data-p="' + p + '" class="' + (DS.period === p ? 'on' : '') + '">' + TAB_NAME[p] + '</span>').join('') +
       '</div>' +
-      '<span class="d-chart-note">' + (DS.period === 'minute' ? '昨收 ' + fmtN(q.prevClose, dec) : '前复权 · MA5 / MA10 / MA20') + '</span>' +
+      '<span class="d-chart-note">' + (DS.period === 'minute' ? '昨收 ' + fmtN(q.prevClose, dec) : '前复权 · MA5/10/20 · 滚轮缩放 · 拖拽平移') + '</span>' +
       '</div>' +
-      '<div class="d-chart-body" id="dChartBody">' + chartSvg(q, dec) + axis +
+      '<div class="d-chart-body" id="dChartBody"><div class="chart-svg-wrap" id="chartWrap">' + chartSvg(q, dec) + '</div>' + axis +
       '<div class="cx-line" id="cxLine"></div><div class="cx-tip" id="cxTip"></div></div>' +
       '</div>';
 
@@ -1184,7 +1255,85 @@
     $('detail').querySelectorAll('.d-tabs span').forEach((el) => {
       el.onclick = () => switchPeriod(el.dataset.p);
     });
+    bindChart();
+  }
+
+  function resetKview() {
+    const all = DS.kline[DS.period] || [];
+    const total = all.length || 1;
+    DS.kview.count = Math.min(120, total);
+    DS.kview.start = Math.max(0, total - DS.kview.count);
+  }
+
+  function renderChartOnly() {
+    const wrap = $('chartWrap');
+    if (!wrap || !DS.data) return;
+    const q = DS.data.quote;
+    const ins = S.data.instruments.find((i) => i.symbol === q.symbol) || {};
+    const dec = ins.kind === 'etf' ? 3 : q.symbol.startsWith('hk') ? 3 : 2;
+    wrap.innerHTML = chartSvg(q, dec);
     bindChartHover();
+  }
+
+  /// 滚轮缩放、拖拽平移、双击复位——这是行情软件图表最基础的手感。
+  function bindChart() {
+    bindChartHover();
+    const body = $('dChartBody');
+    if (!body) return;
+    if (DS.period === 'minute') {
+      body.onwheel = null;
+      body.onmousedown = null;
+      body.ondblclick = null;
+      return;
+    }
+
+    body.onwheel = (e) => {
+      e.preventDefault();
+      const total = (DS.kline[DS.period] || []).length;
+      if (total < 30) return;
+      const v = DS.kview;
+      const oldC = v.count;
+      let next = Math.round(oldC * (e.deltaY > 0 ? 1.16 : 0.86));
+      next = Math.max(25, Math.min(total, next));
+      if (next === oldC) return;
+      const rect = body.getBoundingClientRect();
+      const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const anchor = v.start + oldC * ratio;
+      v.count = next;
+      v.start = Math.max(0, Math.min(total - next, Math.round(anchor - next * ratio)));
+      renderChartOnly();
+    };
+
+    body.onmousedown = (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const rect = body.getBoundingClientRect();
+      const x0 = e.clientX;
+      const s0 = DS.kview.start;
+      const pxPerBar = rect.width / DS.kview.count;
+      const total = (DS.kline[DS.period] || []).length;
+      const onMove = (ev) => {
+        const delta = Math.round((x0 - ev.clientX) / pxPerBar);
+        const ns = Math.max(0, Math.min(total - DS.kview.count, s0 + delta));
+        if (ns !== DS.kview.start) {
+          DS.kview.start = ns;
+          renderChartOnly();
+        }
+      };
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        body.style.cursor = '';
+      };
+      body.style.cursor = 'grabbing';
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    };
+
+    body.ondblclick = () => {
+      resetKview();
+      renderChartOnly();
+    };
   }
 
   const PERIODS = ['minute', 'day', 'week', 'month'];
@@ -1202,6 +1351,7 @@
 
   async function switchPeriod(p) {
     DS.period = p;
+    DS.kview = { start: 0, count: 120 };
     if (p !== 'minute' && DS.kline[p] === undefined) {
       renderDetail();
       try {
@@ -1210,15 +1360,20 @@
       } catch (e) {
         DS.kline[p] = [];
       }
+      resetKview();
     }
     renderDetail();
   }
 
   /// 蜡烛图：上半价格、下半成交量，叠加 MA5/MA10/MA20。
-  function drawKline(candles) {
+  function drawKline(all) {
     const W = 720, H = 134, PX = 4, PY = 6;
     const volH = 32;
     const priceH = H - volH - 8;
+    const total = all.length;
+    const start = Math.max(0, Math.min(DS.kview.start, Math.max(0, total - 1)));
+    const count = Math.max(20, Math.min(DS.kview.count, total));
+    const candles = all.slice(start, start + count);
     const n = candles.length;
     let min = Infinity, max = -Infinity, maxV = 0;
     for (let i = 0; i < n; i++) {
@@ -1257,7 +1412,12 @@
       for (let i = 0; i < n; i++) {
         if (i < k - 1) continue;
         let sum = 0;
-        for (let j = 0; j < k; j++) sum += candles[i - j].close;
+        for (let j = 0; j < k; j++) {
+          const idx = start + i - j;
+          if (idx < 0) { sum = NaN; break; }
+          sum += all[idx].close;
+        }
+        if (isNaN(sum)) continue;
         pts.push(x(i).toFixed(1) + ' ' + y(sum / k).toFixed(1));
       }
       return pts.length > 1
@@ -1283,7 +1443,8 @@
     const tip = $('cxTip');
     if (!body || !line || !tip) return;
     const isMinute = DS.period === 'minute';
-    const arr = isMinute ? DS.minute : DS.kline[DS.period] || [];
+    const full = isMinute ? DS.minute : DS.kline[DS.period] || [];
+    const arr = isMinute ? full : full.slice(DS.kview.start, DS.kview.start + DS.kview.count);
     if (arr.length < 2) return;
     const q = DS.data.quote;
     const sym = q.symbol;
