@@ -4,6 +4,23 @@
 
 ## [Unreleased]
 
+## [1.1.5] - 2026-11-02
+
+### 修复
+
+- 搜索框输入中文后立刻回车会提示「添加失败：无法识别的代码格式」：搜索有 220ms 防抖，回车时结果还没回来，旧逻辑直接把输入框里的文字当股票代码提交
+- 输入法用回车确认候选词时被误判为「添加」，导致提交的字符不完整（如想搜「三七」却按出「三十」）
+- 添加前校验收紧为「代码格式才允许提交」，非代码文本一律走搜索并给出「没找到某某」的明确提示
+
+### 新增
+
+- 搜索无结果时提供「重试搜索」按钮，便于网络波动后重试
+
+### 优化
+
+- 回车时若结果未返回，会立即发起一次搜索并按首条结果添加，不再依赖防抖时序
+- 缩略图改为行情上屏后再请求，行情前端超时放宽到 10 秒，修复冷启动首屏偶发「行情请求超时」
+
 ## [1.1.4] - 2026-10-30
 
 ### 修复
@@ -108,7 +125,8 @@
 - 行情数据来自公开接口，仅供个人参考，不构成投资建议
 - 港股为延迟行情
 
-[Unreleased]: https://github.com/LiangLiang723/wangstock/compare/v1.1.4...HEAD
+[Unreleased]: https://github.com/LiangLiang723/wangstock/compare/v1.1.5...HEAD
+[1.1.5]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.5
 [1.1.4]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.4
 [1.1.3]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.3
 [1.1.2]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.2
