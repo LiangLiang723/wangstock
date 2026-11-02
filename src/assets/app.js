@@ -453,10 +453,8 @@
       schedule();
       return;
     }
-    // 与行情并行发起，别等报价回来再排队
-    refreshSparklines(syms);
     try {
-      const qs = await withTimeout(INV('get_quotes', { symbols: syms }), 8000, '行情请求');
+      const qs = await withTimeout(INV('get_quotes', { symbols: syms }), 10000, '行情请求');
       if (qs && qs.length) {
         const map = Object.assign({}, S.quotes);
         qs.forEach((q) => (map[q.symbol] = q));
@@ -469,6 +467,8 @@
         renderRows();
         renderStatus();
       }
+      // 行情先上屏，缩略图随后补齐；两者并发会在冷启动时抢连接，导致首屏超时
+      refreshSparklines(syms);
     } catch (e) {
       S.error = String(e && e.message ? e.message : e);
       renderStatus();
@@ -560,16 +560,25 @@
     input.focus();
 
     let tmr = null;
+    let composing = false;
+    // 中文输入法用 Enter 确认候选词，此时不能当成「添加」
+    input.addEventListener('compositionstart', () => { composing = true; });
+    input.addEventListener('compositionend', () => { composing = false; });
+
     input.oninput = () => {
+      if (composing) return;
       clearTimeout(tmr);
       const v = input.value.trim();
       if (!v) {
-        $('qHits').innerHTML = '<div class="hit-empty">输入关键词开始搜索</div>';
+        S.hits = [];
+        $('qHits').innerHTML = '<div class="hit-empty">输入关键词开始搜索，例如 600519 / 茅台 / 腾讯</div>';
         return;
       }
       tmr = setTimeout(() => doSearch(v), 220);
     };
     input.onkeydown = async (e) => {
+      // isComposing / keyCode 229 都是输入法正在组词，直接放行
+      if (e.isComposing || composing || e.keyCode === 229) return;
       if (e.key === 'Escape') return closeModal();
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -581,41 +590,61 @@
         paintHits();
       } else if (e.key === 'Enter') {
         e.preventDefault();
+        clearTimeout(tmr);
         const v = input.value.trim();
+        if (!v) return;
         if (S.hits.length) {
           await addHit(S.hits[S.hitSel]);
-        } else if (v) {
-          await addSymbolDirect(v);
+          return;
         }
+        // 结果还没回来（刚敲完就回车）：先搜一次再决定，绝不把文字当代码提交
+        const hits = await doSearch(v);
+        if (hits.length) {
+          await addHit(hits[0]);
+          return;
+        }
+        if (!looksLikeCode(v)) {
+          toast('没找到「' + v + '」，换个关键词或试试拼音首字母');
+          return;
+        }
+        await addSymbolDirect(v);
       }
     };
+  }
+
+  function looksLikeCode(v) {
+    return /^(?:[a-zA-Z]{2})?\d{4,6}$/.test(String(v || '').trim());
   }
 
   async function doSearch(q) {
     const seq = ++S.searchSeq;
     let hits = [];
     try {
-      hits = await INV('search_symbols', { query: q });
+      hits = (await withTimeout(INV('search_symbols', { query: q }), 6000, '搜索')) || [];
     } catch (e) {
       hits = [];
     }
-    if (seq !== S.searchSeq) return;
-    S.hits = hits || [];
+    if (seq !== S.searchSeq) return S.hits || [];
+    S.hits = hits;
     S.hitSel = 0;
     paintHits(q);
+    return S.hits;
   }
 
   function paintHits(q) {
     const box = $('qHits');
     if (!box) return;
     if (!S.hits.length) {
-      const looksCode = /^[a-zA-Z]{0,2}\d{4,6}$/.test((q || '').trim());
+      const looksCode = looksLikeCode(q);
       box.innerHTML =
-        '<div class="hit-empty">没有匹配结果' +
+        '<div class="hit-empty">没找到「' + esc((q || '').trim()) + '」' +
         (looksCode ? '<div style="margin-top:10px"><button class="btn tiny" id="qDirect">直接添加 ' + esc(q.trim()) + '</button></div>' : '') +
-        '<div style="margin-top:8px;font-size:11px;color:var(--text3)">也可以直接输入 6 位 A 股代码或 5 位港股代码后回车</div></div>';
+        '<div style="margin-top:8px;font-size:11px;color:var(--text3)">也可以直接输入 6 位 A 股代码或 5 位港股代码后回车</div>' +
+        '<div style="margin-top:10px"><button class="btn tiny" id="qRetry">重试搜索</button></div></div>';
       const b = $('qDirect');
       if (b) b.onclick = () => addSymbolDirect(q.trim());
+      const rt = $('qRetry');
+      if (rt) rt.onclick = () => doSearch((q || '').trim());
       return;
     }
     const KIND_LABEL = { etf: 'ETF', index: '指数', fund: '场外', stock: '' };
@@ -649,6 +678,10 @@
   }
 
   async function addSymbolDirect(sym, name) {
+    if (!looksLikeCode(sym)) {
+      toast('「' + String(sym || '') + '」不是代码，请从搜索结果中选择');
+      return;
+    }
     const target = S.group === 'all' ? firstWatchGroup() : S.group;
     if (!target) {
       toast('请先创建一个自选分组');
