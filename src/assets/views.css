@@ -1,0 +1,142 @@
+/* wangstock · 业务视图：指数条 / 行情表 / 个股详情 */
+.indexbar {
+  height: 30px; flex: 0 0 30px; display: flex; align-items: center; gap: 18px;
+  padding: 0 14px; border-bottom: 1px solid var(--line-soft); background: var(--surface);
+  overflow: hidden;
+}
+.indexbar .idx { display: flex; align-items: baseline; gap: 6px; font-size: 10.5px; white-space: nowrap; }
+.indexbar .idx .n { color: var(--text-2); }
+.indexbar .idx .v { font-family: var(--mono); font-size: 11.5px; }
+.indexbar .idx .p { font-family: var(--mono); font-size: 10.5px; }
+.indexbar .placeholder { display: flex; gap: 18px; align-items: center; }
+.indexbar .placeholder .skeleton { width: 92px; height: 10px; }
+
+/* ---------- 行情表 ---------- */
+.thead, .row {
+  display: grid;
+  grid-template-columns: var(--grid-cols, minmax(96px, 1fr) 52px 76px 72px 76px 76px 72px 52px 66px);
+  align-items: center; padding: 0 14px;
+}
+.thead {
+  height: 30px; flex: 0 0 30px; font-size: 10.5px; color: var(--text-3);
+  border-bottom: 1px solid var(--line-soft); background: var(--bg);
+}
+.thead > div { text-align: right; display: flex; align-items: center; justify-content: flex-end; gap: 3px; }
+.thead > div:first-child { justify-content: flex-start; }
+.thead > div[data-sort] { cursor: default; }
+.thead > div[data-sort]:hover { color: var(--text-2); }
+.thead .sorted { color: var(--accent); }
+.thead .arrow { font-size: 8px; }
+
+.tbody { flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; }
+.row {
+  height: var(--row-h); font-size: 12.5px; border-bottom: 1px solid var(--line-soft);
+  position: relative;
+}
+.row:hover { background: var(--surface-2); }
+.row.dragging { opacity: .4; }
+.row.drop-above::before, .row.drop-below::after {
+  content: ""; position: absolute; left: 0; right: 0; height: 2px; background: var(--accent);
+}
+.row.drop-above::before { top: -1px; }
+.row.drop-below::after { bottom: -1px; }
+
+.c-name { display: flex; align-items: baseline; gap: 7px; min-width: 0; overflow: hidden; }
+.c-name .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.c-name .cd { font-family: var(--mono); font-size: 10px; color: var(--text-3); }
+.c-name .mk {
+  font-size: 9px; padding: 0 3px; border-radius: 2px; font-family: var(--mono);
+  background: var(--surface-3); color: var(--text-3); flex: 0 0 auto;
+}
+.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.pct {
+  display: inline-block; min-width: 56px; text-align: center; padding: 2px 4px;
+  border-radius: 4px; font-family: var(--mono); font-size: 11px;
+}
+.pct.up { background: var(--pos-soft); }
+.pct.down { background: var(--neg-soft); }
+.pct.flat { background: var(--flat-soft); }
+.range { height: 4px; border-radius: 2px; background: var(--surface-3); position: relative; }
+.range em { position: absolute; top: -3px; width: 2px; height: 10px; border-radius: 1px; }
+.range em.up { background: var(--pos); }
+.range em.down { background: var(--neg); }
+.range em.flat { background: var(--text-3); }
+.spark { height: 18px; display: flex; align-items: center; }
+.spark svg { width: 100%; height: 18px; }
+
+/* 行内操作：常驻但低对比，hover 才强化，既不遮挡数据也可发现 */
+.ops { display: flex; align-items: center; justify-content: flex-end; gap: 1px; opacity: .38; transition: opacity .12s; }
+.row:hover .ops { opacity: 1; }
+.ops .iconbtn { width: 21px; height: 21px; font-size: 11px; }
+.ops .iconbtn:hover { background: var(--accent-soft); color: var(--accent); }
+
+.skeleton-row { display: grid; grid-template-columns: var(--grid-cols); align-items: center; gap: 14px; padding: 0 14px; height: var(--row-h); border-bottom: 1px solid var(--line-soft); }
+.skeleton-row .skeleton { height: 10px; }
+
+/* ---------- 个股详情 ---------- */
+.detail { padding: 12px 16px 24px; }
+.d-top { display: flex; align-items: center; gap: 10px; }
+.d-id { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.d-id h2 { font-size: 16px; font-weight: 600; }
+.d-id span { font-size: 11px; color: var(--text-3); font-family: var(--mono); }
+.d-top .spacer { flex: 1; }
+.d-hero { display: flex; align-items: baseline; gap: 12px; margin: 10px 0 4px; flex-wrap: wrap; }
+.d-price { font-size: 30px; font-weight: 500; font-family: var(--mono); letter-spacing: -.5px; }
+.d-change { display: flex; align-items: baseline; gap: 10px; font-family: var(--mono); font-size: 13px; }
+.d-meta { margin-left: auto; font-size: 10.5px; color: var(--text-3); }
+
+.panel { border: 1px solid var(--line-soft); border-radius: var(--radius); background: var(--surface); }
+.panel-head {
+  height: 34px; padding: 0 10px; display: flex; align-items: center; gap: 8px;
+  border-bottom: 1px solid var(--line-soft); font-size: 11px; color: var(--text-2);
+}
+.panel-head .spacer { flex: 1; }
+.panel-head .note { font-size: 10px; color: var(--text-3); font-family: var(--mono); }
+.chart-tabs { display: flex; gap: 2px; }
+.chart-tabs button { padding: 3px 9px; border-radius: 4px; font-size: 11px; color: var(--text-3); }
+.chart-tabs button:hover { background: var(--surface-3); color: var(--text-2); }
+.chart-tabs button.on { background: var(--accent-soft); color: #b9d2ff; }
+.chart-tools { display: flex; align-items: center; gap: 2px; }
+.chart-tools .iconbtn { width: 22px; height: 22px; font-size: 12px; }
+
+.chart-body { position: relative; padding: 6px 8px 2px; }
+.chart-body svg { display: block; width: 100%; height: 150px; }
+.chart-empty { height: 150px; display: flex; align-items: center; justify-content: center; color: var(--text-3); font-size: 11.5px; }
+.chart-axis { display: flex; justify-content: space-between; padding: 0 2px 4px; font-size: 10px; color: var(--text-3); font-family: var(--mono); }
+.cx-line { position: absolute; top: 0; bottom: 0; width: 1px; background: #7b8598; pointer-events: none; display: none; }
+.cx-tip {
+  position: absolute; top: 6px; padding: 5px 8px; border-radius: var(--radius-sm);
+  background: rgba(20, 23, 30, .97); border: 1px solid var(--line);
+  font-size: 10.5px; color: var(--text-2); white-space: nowrap; pointer-events: none;
+  display: none; font-family: var(--mono); line-height: 1.6; z-index: 3;
+}
+.cx-tip b { color: var(--text); font-weight: 400; }
+
+.d-cols { display: flex; gap: 12px; margin-top: 12px; align-items: flex-start; }
+.d-grid {
+  flex: 1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px; background: var(--line-soft); border: 1px solid var(--line-soft);
+  border-radius: var(--radius); overflow: hidden;
+}
+.d-cell { background: var(--surface); padding: 6px 10px; display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.d-cell .k { font-size: 11px; color: var(--text-3); }
+.d-cell .v { font-size: 12px; font-family: var(--mono); }
+.d-book { width: 226px; flex: 0 0 226px; border: 1px solid var(--line-soft); border-radius: var(--radius); background: var(--surface); padding: 6px 0; }
+.d-book h3 { font-size: 10.5px; color: var(--text-3); font-weight: 400; padding: 2px 10px 6px; }
+.lv { display: grid; grid-template-columns: 32px 1fr 60px; align-items: center; height: 21px; padding: 0 10px; font-size: 11.5px; }
+.lv:hover { background: var(--surface-2); }
+.lv .s { color: var(--text-3); font-size: 10px; }
+.lv .p { text-align: right; font-family: var(--mono); }
+.lv .q { text-align: right; font-family: var(--mono); font-size: 10px; color: var(--text-3); }
+.lv-sep { height: 1px; background: var(--line); margin: 4px 8px; }
+.d-nav { display: flex; align-items: center; gap: 4px; margin-bottom: 8px; }
+.d-nav .hint { font-size: 10.5px; color: var(--text-3); margin-left: auto; }
+
+@media (max-width: 720px) {
+  .d-cols { flex-direction: column; }
+  .d-book { width: 100%; flex: 0 0 auto; }
+}
+/* 并排模式下详情面板变窄，指标与盘口改为上下排列 */
+.content.split .d-cols { flex-direction: column; }
+.content.split .d-book { width: 100%; flex: 0 0 auto; }
+.content.split .chart-body svg { height: 132px; }

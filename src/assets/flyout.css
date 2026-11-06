@@ -1,21 +1,21 @@
 :root {
-  --bg: #1e1e24;
-  --hover: #2c2c36;
-  --text: #e9e9ec;
-  --text2: #9c9ca6;
-  --text3: #6b6b75;
-  --pos: #f0616d;
-  --neg: #35c08a;
-  --pos-bg: rgba(240, 97, 109, 0.13);
-  --neg-bg: rgba(53, 192, 138, 0.13);
+  --bg: #161920;
+  --hover: #232833;
+  --text: #e7eaf0;
+  --text2: #9fa8b8;
+  --text3: #6c7687;
+  --pos: #f15864;
+  --neg: #23b184;
+  --pos-bg: rgba(241, 88, 100, 0.13);
+  --neg-bg: rgba(35, 177, 132, 0.13);
   --mono: "Cascadia Mono", "Consolas", "SF Mono", ui-monospace, monospace;
 }
 
 body[data-color="intl"] {
-  --pos: #35c08a;
-  --neg: #f0616d;
-  --pos-bg: rgba(53, 192, 138, 0.13);
-  --neg-bg: rgba(240, 97, 109, 0.13);
+  --pos: #23b184;
+  --neg: #f15864;
+  --pos-bg: rgba(35, 177, 132, 0.13);
+  --neg-bg: rgba(241, 88, 100, 0.13);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
