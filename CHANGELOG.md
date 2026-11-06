@@ -4,6 +4,27 @@
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-06
+
+### 新增
+
+- 一个标的可以同时属于多个自选分组：命令面板底部可勾选多个目标分组，一次添加即写入所有分组
+- 行 `⋯` 菜单新增「管理分组…」，可随时勾选/取消所属分组；取消全部即从自选中移除
+- 新增 `set_symbol_groups` 命令与 `Data::set_symbol_groups` 纯函数，保留原分组内排序、不影响行业分类归属
+- 新增离屏自检参数 `--detail=代码` / `--palette` / `--groups=代码`，配合 `tools/offscreen-shot.py` 可在完全不弹窗的情况下检查详情页、命令面板与管理分组弹窗
+
+### 修复
+
+- 上证指数等指数的分时曲线显示为一条平线：接口第 3/4 字段是全市场累计成交额与成交量，算出的「均价」是十几元的平均股价而非指数点位，被纳入纵轴后把价格曲线压平。现在与价格不同量级的均价一律忽略，也不再画均价线
+- 十字光标不再显示无意义的指数均价；指数无五档盘口时给出明确提示
+- 分时均价改用当日累计额/量直接计算，不再对累计值二次累加
+
+### 测试
+
+- 新增 5 个单元测试，覆盖多选分组、排序保留、空集合移除、非法分组校验与行业分类不受影响
+
+
+
 ## [2.0.0] - 2026-11-06
 
 ### 架构
@@ -171,7 +192,8 @@
 - 行情数据来自公开接口，仅供个人参考，不构成投资建议
 - 港股为延迟行情
 
-[Unreleased]: https://github.com/LiangLiang723/wangstock/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/LiangLiang723/wangstock/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/LiangLiang723/wangstock/releases/tag/v2.1.0
 [2.0.0]: https://github.com/LiangLiang723/wangstock/releases/tag/v2.0.0
 [1.1.6]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.6
 [1.1.5]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.5
