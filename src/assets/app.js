@@ -340,7 +340,7 @@
         const amt = s.showAmount ? '<div class="num js-amt">' + (q ? fmtAmt(q.amount) : '—') + '</div>' : '';
         const st = q ? q.status : 'closed';
         return (
-          '<div class="row" draggable="true" data-symbol="' + esc(sym) + '">' +
+          '<div class="row" data-symbol="' + esc(sym) + '" title="拖动调整顺序 · 点击查看明细">' +
           '<div class="c-name"><span class="nm">' + esc(ins.name) + '</span>' +
           '<span class="cd">' + esc(ins.code) + '</span>' +
           '<span class="mk">' + esc(ins.market) + '</span></div>' +
@@ -999,9 +999,29 @@
     }
   });
 
-  // ---------- 拖拽 ----------
+  // ---------- 自定义拖拽排序 ----------
+  // WebView2 里原生 HTML5 拖放依赖系统 OLE 通道，dragstart/drop 经常完全不触发。
+  // 改为纯鼠标事件实现：按下 → 移动 → 松开，行为确定，也不受系统拖放策略影响。
+  let drag = null;
 
-  $('tbody').addEventListener('dragstart', (e) => {
+  function clearDropMarks() {
+    document.querySelectorAll('.row.drop-above,.row.drop-below')
+      .forEach((r) => r.classList.remove('drop-above', 'drop-below'));
+    document.querySelectorAll('.grp.drag-over')
+      .forEach((r) => r.classList.remove('drag-over'));
+  }
+
+  function endDrag() {
+    if (!drag) return;
+    drag.row.classList.remove('dragging');
+    document.body.style.cursor = '';
+    clearDropMarks();
+    drag = null;
+    S.dragging = null;
+  }
+
+  $('tbody').addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
     const row = e.target.closest('.row');
     if (!row) return;
     if (S.sortKey) {
@@ -1009,82 +1029,87 @@
       S.sortDir = 1;
       renderHead();
       renderRows();
-      e.preventDefault();
       toast('已切回自定义顺序，请再拖一次');
       return;
     }
-    S.dragging = row.dataset.symbol;
-    S.justDragged = false;
-    row.classList.add('dragging');
-    e.dataTransfer.effectAllowed = 'move';
-    try { e.dataTransfer.setData('text/plain', S.dragging); } catch (_) {}
+    drag = {
+      sym: row.dataset.symbol, x: e.clientX, y: e.clientY,
+      active: false, row, target: null, before: false, gid: null,
+    };
   });
 
-  $('tbody').addEventListener('dragend', () => {
-    S.dragging = null;
-    S.justDragged = true;
-    setTimeout(() => { S.justDragged = false; }, 120);
-    document.querySelectorAll('.row.dragging').forEach((r) => r.classList.remove('dragging'));
-    document.querySelectorAll('.row.drop-above,.row.drop-below').forEach((r) => r.classList.remove('drop-above', 'drop-below'));
-    document.querySelectorAll('.grp.drag-over').forEach((r) => r.classList.remove('drag-over'));
-  });
-
-  $('tbody').addEventListener('dragover', (e) => {
-    const row = e.target.closest('.row');
-    if (!row || !S.dragging) return;
-    e.preventDefault();
-    document.querySelectorAll('.row.drop-above,.row.drop-below').forEach((r) => r.classList.remove('drop-above', 'drop-below'));
-    const rect = row.getBoundingClientRect();
-    row.classList.add(e.clientY - rect.top < rect.height / 2 ? 'drop-above' : 'drop-below');
-  });
-
-  $('tbody').addEventListener('drop', async (e) => {
-    const row = e.target.closest('.row');
-    if (!row || !S.dragging) return;
-    e.preventDefault();
-    const target = row.dataset.symbol;
-    const moving = S.dragging;
-    if (target === moving) return;
-    const list = currentSymbols().filter((s) => s !== moving);
-    const at = list.indexOf(target);
-    const before = row.classList.contains('drop-above');
-    if (at < 0) return;
-    list.splice(before ? at : at + 1, 0, moving);
-    S.rowSig = null;
-    await call('reorder_symbols', { groupId: S.group, symbols: list });
-    tick();
-  });
-
-  $('sidebar').addEventListener('dragover', (e) => {
-    const row = e.target.closest('.grp');
-    if (!row || !S.dragging) return;
-    if (row.dataset.gid === 'all') return;
-    e.preventDefault();
-    document.querySelectorAll('.grp.drag-over').forEach((r) => r.classList.remove('drag-over'));
-    row.classList.add('drag-over');
-  });
-
-  $('sidebar').addEventListener('dragleave', (e) => {
-    const row = e.target.closest('.grp');
-    if (row) row.classList.remove('drag-over');
-  });
-
-  $('sidebar').addEventListener('drop', async (e) => {
-    const row = e.target.closest('.grp');
-    if (!row || !S.dragging) return;
-    e.preventDefault();
-    const gid = row.dataset.gid;
-    row.classList.remove('drag-over');
-    if (gid === 'all') return;
-    const sym = S.dragging;
-    if (S.group === 'all') {
-      // 从「全部自选」拖到某个分组：加入该分组
-      await call('add_symbol', { symbol: sym, groupId: gid }, '已加入分组');
-    } else {
-      await call('move_symbol', { symbol: sym, fromGroup: S.group, toGroup: gid }, '已移动');
+  document.addEventListener('mousemove', (e) => {
+    if (!drag) return;
+    if (!drag.active) {
+      // 小位移仍算点击，避免正常单击进详情被误判为拖拽
+      if (Math.abs(e.clientX - drag.x) < 4 && Math.abs(e.clientY - drag.y) < 6) return;
+      drag.active = true;
+      S.dragging = drag.sym;
+      drag.row.classList.add('dragging');
+      document.body.style.cursor = 'grabbing';
     }
+    e.preventDefault();
+    clearDropMarks();
+    drag.target = null;
+    drag.gid = null;
+
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+
+    // 拖到侧栏分组：移动标的（与原来的拖放语义一致）
+    const grp = el && el.closest('.grp');
+    if (grp && grp.dataset.gid !== 'all') {
+      grp.classList.add('drag-over');
+      drag.gid = grp.dataset.gid;
+      return;
+    }
+
+    const row = el && el.closest('.row');
+    if (!row) return;
+    const rect = row.getBoundingClientRect();
+    drag.before = e.clientY - rect.top < rect.height / 2;
+    drag.target = row.dataset.symbol;
+    row.classList.add(drag.before ? 'drop-above' : 'drop-below');
+
+    // 长列表：靠近上下边缘时自动滚动，否则拖不到屏幕外的行
+    const box = $('tbody');
+    const br = box.getBoundingClientRect();
+    if (e.clientY < br.top + 26) box.scrollTop -= 14;
+    else if (e.clientY > br.bottom - 26) box.scrollTop += 14;
+  });
+
+  document.addEventListener('mouseup', async () => {
+    if (!drag) return;
+    const d = drag;
+    if (!d.active) {
+      drag = null;
+      return;
+    }
+    // 拖拽结束后的这一次 click 不能进入详情页
+    S.justDragged = true;
+    setTimeout(() => { S.justDragged = false; }, 180);
+    endDrag();
+
+    if (d.gid) {
+      if (S.group === 'all') {
+        await call('add_symbol', { symbol: d.sym, groupId: d.gid }, '已加入分组');
+      } else {
+        await call('move_symbol', { symbol: d.sym, fromGroup: S.group, toGroup: d.gid }, '已移动');
+      }
+      tick();
+      return;
+    }
+    if (!d.target || d.target === d.sym) return;
+    const list = currentSymbols().filter((x) => x !== d.sym);
+    const at = list.indexOf(d.target);
+    if (at < 0) return;
+    list.splice(d.before ? at : at + 1, 0, d.sym);
+    S.rowSig = null;
+    const ok = await call('reorder_symbols', { groupId: S.group, symbols: list });
+    if (ok) toast('顺序已更新');
     tick();
   });
+
+  window.addEventListener('blur', endDrag);
 
   // ---------- 托盘事件 ----------
 
