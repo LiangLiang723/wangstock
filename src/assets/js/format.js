@@ -97,7 +97,13 @@ export function sparkSvg(data, prev) {
 export function minuteSvg(points, prev, rise) {
   const W = 720, H = 150, PX = 4, PY = 8;
   if (!points || points.length < 2) return '';
-  const vals = points.map((p) => p.price).concat(points.map((p) => p.avg || p.price));
+  const prices = points.map((p) => p.price);
+  let lo = Math.min.apply(null, prices), hi = Math.max.apply(null, prices);
+  if (prev) { lo = Math.min(lo, prev); hi = Math.max(hi, prev); }
+  // 均价只保留与价格同一量级的值；指数等标的没有有效均价，绝不能让它拉爆纵轴
+  const avgOk = (a) => a > 0 && a > lo * 0.5 && a < hi * 2;
+  const avgs = points.map((p) => (avgOk(p.avg) ? p.avg : null));
+  const vals = prices.concat(avgs.filter((a) => a !== null));
   let min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
   if (prev) { min = Math.min(min, prev); max = Math.max(max, prev); }
   if (max - min < 1e-9) max = min + 0.01;
@@ -117,9 +123,13 @@ export function minuteSvg(points, prev, rise) {
   }
   const base = prev ? '<line x1="' + PX + '" y1="' + y(prev).toFixed(1) + '" x2="' + (W - PX) + '" y2="' + y(prev).toFixed(1) + '" stroke="#69748a" stroke-width="1" stroke-dasharray="3 4"/>' : '';
   let avg = '';
-  if (points[0] && points[0].avg) {
-    let a = '';
-    for (let i = 0; i < n; i++) a += (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(points[i].avg).toFixed(1);
+  if (avgs.some((a) => a !== null)) {
+    let a = '', pen = false;
+    for (let i = 0; i < n; i++) {
+      if (avgs[i] === null) { pen = false; continue; }
+      a += (pen ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(avgs[i]).toFixed(1);
+      pen = true;
+    }
     avg = '<path d="' + a + '" fill="none" stroke="#e0a34a" stroke-width="1" stroke-opacity=".9"/>';
   }
   return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + grid + base +

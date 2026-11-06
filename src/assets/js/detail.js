@@ -125,7 +125,11 @@ function bookHtml(q) {
       '<span class="q">' + Math.round(l.volume).toLocaleString() + '</span></div>';
   }).join('');
   const asks = (d.asks || []).slice().reverse();
-  return '<h3>五档盘口</h3>' + lv(asks, '卖') + '<div class="lv-sep"></div>' + lv(d.bids || [], '买');
+  const bids = d.bids || [];
+  if (!asks.length && !bids.length) {
+    return '<h3>五档盘口</h3><div style="padding:10px;font-size:11px;color:var(--text-3)">该标的暂无盘口数据</div>';
+  }
+  return '<h3>五档盘口</h3>' + lv(asks, '卖') + '<div class="lv-sep"></div>' + lv(bids, '买');
 }
 
 export function renderDetail() {
@@ -308,8 +312,9 @@ export function bindDetail() {
     if (isMinute) {
       const p = arr[i];
       const pct = q.prevClose ? ((p.price - q.prevClose) / q.prevClose) * 100 : 0;
+      const avgValid = p.avg > 0 && Math.abs(p.avg - q.price) / q.price < 0.3;
       tip.innerHTML = '<b>' + esc(p.t) + '</b> ' + p.price.toFixed(dec) + '<br>' + fmtPct(pct) +
-        (p.avg ? '<br>均价 ' + p.avg.toFixed(dec) : '');
+        (avgValid ? '<br>均价 ' + p.avg.toFixed(dec) : '');
     } else {
       const k = arr[i];
       tip.innerHTML = '<b>' + esc(k.date) + '</b><br>开 ' + k.open.toFixed(2) + '　收 ' + k.close.toFixed(2) +

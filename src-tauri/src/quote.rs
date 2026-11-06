@@ -503,8 +503,6 @@ pub fn fetch_minute(symbol: &str) -> Result<Vec<MinutePoint>, String> {
         .ok_or_else(|| "该标的暂无分时数据".to_string())?;
 
     let mut out: Vec<MinutePoint> = Vec::with_capacity(arr.len());
-    let mut cum_vol = 0.0_f64;
-    let mut cum_amt = 0.0_f64;
     for item in arr {
         if let Some(s) = item.as_str() {
             let parts: Vec<&str> = s.split(' ').collect();
@@ -518,10 +516,15 @@ pub fn fetch_minute(symbol: &str) -> Result<Vec<MinutePoint>, String> {
             if t.len() != 4 || price <= 0.0 {
                 continue;
             }
-            // 接口给的是每分钟量（手）与额（元），累加成 VWAP 分子分母
-            cum_vol += vol * 100.0;
-            cum_amt += amt;
-            let avg = if cum_vol > 0.0 { cum_amt / cum_vol } else { price };
+            // 第 3/4 字段是当日累计量（手）与累计额（元），直接相除即 VWAP。
+            // 指数返回的是全市场成交额与成交量，算出来是「平均股价」而非指数点位，
+            // 与价格线差几个数量级；此时置 0，前端不画均价线，也不会污染纵轴。
+            let avg = if vol > 0.0 && amt > 0.0 {
+                let a = amt / (vol * 100.0);
+                if (a - price).abs() / price < 0.3 { a } else { 0.0 }
+            } else {
+                0.0
+            };
             out.push(MinutePoint {
                 t: format!("{}:{}", &t[0..2], &t[2..4]),
                 price,
