@@ -1,7 +1,7 @@
 /* 命令层：搜索/添加面板、设置、视图菜单。
    高频操作集中到零层级入口，状态（是否已添加、类型）在结果中直接可见。 */
 import { $, esc, state, actions, api, call, toast, mountModal, closeModal, showMenu } from './core.js';
-import { instrument, firstWatchGroup, fmtClock } from './format.js';
+import { instrument, firstWatchGroup, groupById, watchIds } from './format.js';
 
 const KIND_LABEL = { etf: 'ETF', index: '指数', fund: '场外', stock: '' };
 const looksLikeCode = (v) => /^(?:[a-zA-Z]{2})?\d{4,6}$/.test(String(v || '').trim());
@@ -10,15 +10,20 @@ const looksLikeCode = (v) => /^(?:[a-zA-Z]{2})?\d{4,6}$/.test(String(v || '').tr
 export function openSearch() {
   state.hits = [];
   state.hitSel = 0;
+  const cur = state.group !== 'all' && groupById(state.group)?.kind === 'watch'
+    ? state.group : firstWatchGroup();
+  state.pickGroups = cur ? [cur] : [];
   const m = mountModal(
     '<div class="palette-input">' +
     '<svg width="15" height="15" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.6 10.6L14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>' +
     '<input id="qInput" placeholder="输入代码、名称或拼音首字母" autocomplete="off" spellcheck="false">' +
     '<kbd>Esc</kbd></div>' +
     '<div class="hits" id="qHits"><div class="hit-empty">输入关键词开始搜索<br><span style="font-size:11px">例如 600519 / 茅台 / 三七 / 通信ETF</span></div></div>' +
+    '<div class="group-picker" id="qGroups"></div>' +
     '<div class="modal-foot"><span>↑↓ 选择</span><span>Enter 添加</span><span>Esc 关闭</span>' +
     '<span style="margin-left:auto">代码可直接回车添加</span></div>', true);
 
+  paintGroupChips();
   const input = m.querySelector('#qInput');
   input.focus();
   let tmr = null, composing = false;
@@ -64,6 +69,32 @@ export function openSearch() {
       await addSymbolDirect(v);
     }
   };
+}
+
+/** 命令面板底部的目标分组多选：一个标的可以一次加入多个分组。 */
+function paintGroupChips() {
+  const box = $('qGroups');
+  if (!box) return;
+  const groups = (state.data.groups || [])
+    .filter((g) => g.kind === 'watch').sort((a, b) => a.sort - b.sort);
+  box.innerHTML = '<span class="gp-label">添加到</span>' +
+    groups.map((g) => {
+      const on = state.pickGroups.includes(g.id);
+      return '<button class="chip' + (on ? ' on' : '') + '" data-g="' + esc(g.id) + '">' +
+        (on ? '✓ ' : '') + esc(g.name) + '</button>';
+    }).join('') + '<span class="gp-hint">可多选，至少保留一个</span>';
+  box.querySelectorAll('.chip').forEach((el) => {
+    el.onclick = () => {
+      const gid = el.dataset.g;
+      const i = state.pickGroups.indexOf(gid);
+      if (i >= 0) {
+        if (state.pickGroups.length > 1) state.pickGroups.splice(i, 1);
+      } else {
+        state.pickGroups.push(gid);
+      }
+      paintGroupChips();
+    };
+  });
 }
 
 async function doSearch(q) {
@@ -112,19 +143,62 @@ async function addHit(h) {
 
 async function addSymbolDirect(sym, name) {
   if (!looksLikeCode(sym)) { toast('请从搜索结果中选择标的'); return; }
-  const target = state.group === 'all' ? firstWatchGroup() : state.group;
-  if (!target) { toast('请先创建一个自选分组'); return; }
-  const already = state.data.members.some((m) => m.groupId === target && m.symbol === sym);
-  if (already) { toast((name || instrument(sym).name) + ' 已在该分组'); return; }
+  const INV = window.__TAURI__.core.invoke;
+  const groups = state.pickGroups.length ? state.pickGroups.slice() : [firstWatchGroup()].filter(Boolean);
+  if (!groups.length) { toast('请先创建一个自选分组'); return; }
+  const watch = watchIds();
   try {
-    state.data = await window.__TAURI__.core.invoke('add_symbol', { symbol: sym, groupId: target });
+    // 新标的先建档（add_symbol 幂等），再用多选命令写入所有目标分组
+    if (!(state.data.instruments || []).some((x) => x.symbol === sym)) {
+      state.data = await INV('add_symbol', { symbol: sym, groupId: groups[0] });
+    }
+    const existing = state.data.members
+      .filter((m) => m.symbol === sym && watch.has(m.groupId)).map((m) => m.groupId);
+    const finalGroups = Array.from(new Set(existing.concat(groups)));
+    const unchanged = finalGroups.length === existing.length &&
+      finalGroups.every((g) => existing.includes(g));
+    if (!unchanged) {
+      state.data = await INV('set_symbol_groups', { symbol: sym, groupIds: finalGroups });
+    }
     closeModal();
     actions.render && actions.render();
     actions.refreshNow && actions.refreshNow();
-    toast('已添加 ' + (name || instrument(sym).name));
+    const label = name || instrument(sym).name;
+    toast(unchanged ? label + ' 已在所选分组' : '已添加 ' + label + ' · ' + finalGroups.length + ' 个分组');
   } catch (e) {
     toast('添加失败：' + String(e));
   }
+}
+
+/** 已有标的：勾选/取消所属分组，一次性写入。 */
+export function openGroupPicker(sym, name) {
+  const watch = watchIds();
+  const groups = (state.data.groups || [])
+    .filter((g) => g.kind === 'watch').sort((a, b) => a.sort - b.sort);
+  const cur = state.data.members
+    .filter((m) => m.symbol === sym && watch.has(m.groupId)).map((m) => m.groupId);
+  const label = name || instrument(sym).name;
+  const m = mountModal(
+    '<div class="modal-head">管理分组<span class="sub">' + esc(label) + ' · ' + esc(instrument(sym).code) + '</span>' +
+    '<button class="iconbtn" id="gClose">✕</button></div>' +
+    '<div class="modal-body"><div class="section"><div class="section-title">所属自选分组（可多选）</div>' +
+    '<div class="group-list">' + groups.map((g) =>
+      '<label class="switch gcheck"><input type="checkbox" data-g="' + esc(g.id) + '"' +
+      (cur.includes(g.id) ? ' checked' : '') + '><span>' + esc(g.name) + '</span></label>').join('') +
+    '</div><div class="hint">取消全部勾选会把该标的从所有自选分组移除；行业分类不受影响。</div></div></div>' +
+    '<div class="modal-actions"><span class="spacer"></span><button class="btn" id="gCancel">取消</button>' +
+    '<button class="btn primary" id="gSave">保存</button></div>', true);
+  m.querySelector('#gClose').onclick = closeModal;
+  m.querySelector('#gCancel').onclick = closeModal;
+  m.querySelector('#gSave').onclick = async () => {
+    const ids = Array.from(m.querySelectorAll('.gcheck input:checked')).map((x) => x.dataset.g);
+    const ok = await call('set_symbol_groups', { symbol: sym, groupIds: ids });
+    if (ok) {
+      closeModal();
+      actions.refreshNow && actions.refreshNow();
+      toast(ids.length ? label + ' · 已加入 ' + ids.length + ' 个分组' : label + ' 已从自选移除');
+    }
+  };
 }
 
 /* ---------- 视图菜单 ---------- */

@@ -10,8 +10,13 @@
 4. 检查截图是否为空白，然后结束进程。
 
 用法：
-    python tools/offscreen-shot.py [输出路径] [等待秒数]
+    python tools/offscreen-shot.py [输出路径] [等待秒数] [选项]
 默认输出 %TEMP%/wangstock-offscreen.png，等待 12 秒。
+
+选项（可组合，均不需要显示窗口或模拟鼠标）：
+    --detail=代码    直接打开个股详情页，检查分时 / K 线渲染
+    --palette        打开搜索添加面板，检查分组多选 chips
+    --groups=代码    打开该标的的「管理分组」弹窗
 
 注意：只做渲染检查，不做点击/拖拽类交互验证；这类验证需要在用户同意时
 用短时的前台窗口完成，或改为对纯函数与命令层做自动化测试。
@@ -25,8 +30,23 @@ from ctypes import wintypes
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXE = os.path.join(ROOT, "wangstock.exe")
-OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.environ.get("TEMP", "."), "wangstock-offscreen.png")
-WAIT = float(sys.argv[2]) if len(sys.argv) > 2 else 12.0
+_args = sys.argv[1:]
+_pos = []
+_pass = []
+_i = 0
+while _i < len(_args):
+    _a = _args[_i]
+    if _a.startswith("--"):
+        if _a == "--detail" and _i + 1 < len(_args):
+            _i += 1
+            _pass.append("--detail=" + _args[_i])
+        else:
+            _pass.append(_a)
+    else:
+        _pos.append(_a)
+    _i += 1
+OUT = _pos[0] if _pos else os.path.join(os.environ.get("TEMP", "."), "wangstock-offscreen.png")
+WAIT = float(_pos[1]) if len(_pos) > 1 else 12.0
 
 u = ctypes.windll.user32
 g = ctypes.windll.gdi32
@@ -108,7 +128,8 @@ def main():
     startup = subprocess.STARTUPINFO()
     startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
     startup.wShowWindow = SW_HIDE
-    proc = subprocess.Popen([EXE], cwd=ROOT, startupinfo=startup)
+    cmd = [EXE] + _pass
+    proc = subprocess.Popen(cmd, cwd=ROOT, startupinfo=startup)
 
     win = None
     for _ in range(250):
@@ -122,10 +143,11 @@ def main():
         return 1
 
     hwnd, width, height = win
-    # 双保险：隐藏 + 移出屏幕，全程不调用 SetForegroundWindow / 不点击
-    u.ShowWindow(hwnd, SW_HIDE)
+    # 先移出可视区域，再以「可见但不激活」状态保持渲染。
+    # 直接 SW_HIDE 会让 WebView2 停止绘制，PrintWindow 只能拿到空白。
     u.SetWindowPos(hwnd, 0, -32000, -32000, 0, 0,
                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE)
+    u.ShowWindow(hwnd, 4)
     print("offscreen: hwnd=%s size=%dx%d" % (hwnd, width, height))
 
     time.sleep(WAIT)

@@ -45,6 +45,13 @@ fn get_state(st: State<AppState>) -> Data {
     st.data.lock().unwrap().clone()
 }
 
+/// 供离屏自检脚本使用：允许以 --detail=代码 启动并直接打开个股详情，
+/// 全程无需显示窗口或模拟鼠标。
+#[tauri::command]
+fn launch_args() -> Vec<String> {
+    std::env::args().collect()
+}
+
 #[tauri::command]
 fn add_group(
     kind: String,
@@ -284,6 +291,19 @@ fn reorder_symbols(
     Ok(d.clone())
 }
 
+/// 设置一个标的所属的自选分组（多选）。前端负责合并已有归属后传入最终集合。
+#[tauri::command]
+fn set_symbol_groups(
+    symbol: String,
+    group_ids: Vec<String>,
+    st: State<AppState>,
+) -> Result<Data, String> {
+    let mut d = st.data.lock().unwrap();
+    d.set_symbol_groups(&symbol, &group_ids)?;
+    persist(&st, &d)?;
+    Ok(d.clone())
+}
+
 #[tauri::command]
 fn update_settings(settings: Settings, st: State<AppState>) -> Result<Data, String> {
     let mut d = st.data.lock().unwrap();
@@ -456,6 +476,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             get_state,
+            launch_args,
             add_group,
             rename_group,
             set_group_color,
@@ -466,6 +487,7 @@ fn main() {
             remove_symbol,
             move_symbol,
             reorder_symbols,
+            set_symbol_groups,
             update_settings,
             search_symbols,
             get_quotes,

@@ -5,7 +5,7 @@ import { renderShell, renderHead, renderStatus, renderIndexes, bindShell, INDEXE
 import { renderSidebar, bindSidebar } from './sidebar.js';
 import { renderHead as renderListHead, renderRows, bindList, refreshSparklines, setSort } from './watchlist.js';
 import { openDetail, closeDetail, refreshDetail, bindDetail } from './detail.js';
-import { openSearch, openSettings, openViewMenu } from './palette.js';
+import { openSearch, openSettings, openViewMenu, openGroupPicker } from './palette.js';
 
 let timer = null;
 let idxBusy = false;
@@ -121,6 +121,7 @@ async function boot() {
     openSearch,
     openSettings,
     openViewMenu,
+    openGroupPicker,
     openDetail,
     closeDetail,
     stepDetail,
@@ -139,6 +140,15 @@ async function boot() {
     showFatal(String((e && e.stack) || e));
   }
   state.booted = true;
+  // 离屏自检：--detail=代码 可直接打开个股详情，无需任何鼠标操作
+  try {
+    const args = (await window.__TAURI__.core.invoke('launch_args')) || [];
+    const flag = args.find((a) => String(a).startsWith('--detail='));
+    const gflag = args.find((a) => String(a).startsWith('--groups='));
+    if (flag) openDetail(String(flag).slice('--detail='.length));
+    else if (args.includes('--palette')) openSearch();
+    if (gflag) openGroupPicker(String(gflag).slice('--groups='.length));
+  } catch (e) { /* 命令不可用时按正常启动流程继续 */ }
   tick();
   setInterval(() => {
     if (state.booted) renderStatus();

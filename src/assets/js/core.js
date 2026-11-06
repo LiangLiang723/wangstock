@@ -39,6 +39,7 @@ export const state = {
   searchSeq: 0,
   hits: [],
   hitSel: 0,
+  pickGroups: [],
   booted: false,
 };
 

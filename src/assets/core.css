@@ -163,6 +163,26 @@ kbd {
   border-top: 1px solid var(--line-soft); font-size: 10.5px; color: var(--text-3);
 }
 
+/* 分组多选 */
+.group-picker {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 8px 12px; border-top: 1px solid var(--line-soft); background: var(--surface-2);
+}
+.gp-label { font-size: 10.5px; color: var(--text-3); margin-right: 2px; }
+.gp-hint { font-size: 10px; color: var(--text-3); margin-left: auto; }
+.chip {
+  height: 22px; padding: 0 9px; border: 1px solid var(--line); border-radius: 11px;
+  font-size: 11px; color: var(--text-2); background: var(--surface);
+}
+.chip:hover { border-color: #3a4353; color: var(--text); }
+.chip.on { background: var(--accent-soft); border-color: var(--accent); color: #b9d2ff; }
+.group-list { display: flex; flex-direction: column; gap: 8px; }
+.gcheck {
+  padding: 8px 10px; border: 1px solid var(--line-soft); border-radius: var(--radius-sm);
+  background: var(--surface-2); font-size: 12px;
+}
+.gcheck:hover { border-color: var(--line); }
+
 /* 右键菜单 */
 .menu {
   position: fixed; z-index: 60; min-width: 172px; padding: 5px; display: none;

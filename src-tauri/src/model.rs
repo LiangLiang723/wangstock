@@ -128,6 +128,62 @@ impl Data {
         self.order = next;
     }
 
+    /// 设置一个标的所属的自选分组（多选）。传入的列表即最终结果。
+    /// 行业分类中的归属不受影响；若最终没有任何归属，清理标的档案。
+    pub fn set_symbol_groups(&mut self, symbol: &str, group_ids: &[String]) -> Result<(), String> {
+        let sym = symbol.trim().to_lowercase();
+        if sym.is_empty() {
+            return Err("标的代码为空".into());
+        }
+        if !self.instruments.iter().any(|i| i.symbol == sym) {
+            return Err("标的不存在".into());
+        }
+        for gid in group_ids {
+            match self.groups.iter().find(|g| g.id == *gid) {
+                Some(g) if g.kind == "watch" => {}
+                Some(_) => return Err("只能选择自选分组".into()),
+                None => return Err(format!("分组不存在：{}", gid)),
+            }
+        }
+        let watch: std::collections::HashSet<String> = self
+            .groups
+            .iter()
+            .filter(|g| g.kind == "watch")
+            .map(|g| g.id.clone())
+            .collect();
+        let mut seen = std::collections::HashSet::new();
+        let wanted: Vec<String> = group_ids
+            .iter()
+            .filter(|g| seen.insert((*g).clone()))
+            .cloned()
+            .collect();
+
+        // 保留原分组内的排序位置，避免「打开管理分组但什么都没改」也打乱顺序
+        let old_sorts: std::collections::HashMap<String, i64> = self
+            .members
+            .iter()
+            .filter(|m| m.symbol == sym && watch.contains(&m.group_id))
+            .map(|m| (m.group_id.clone(), m.sort))
+            .collect();
+        self.members
+            .retain(|m| !(m.symbol == sym && watch.contains(&m.group_id)));
+        for gid in &wanted {
+            let sort = old_sorts.get(gid).copied().unwrap_or_else(|| {
+                self.members.iter().filter(|m| m.group_id == *gid).count() as i64
+            });
+            self.members.push(Member {
+                group_id: gid.clone(),
+                symbol: sym.clone(),
+                sort,
+            });
+        }
+        if !self.members.iter().any(|m| m.symbol == sym) {
+            self.instruments.retain(|i| i.symbol != sym);
+        }
+        self.normalize_order();
+        Ok(())
+    }
+
     /// 应用一次排序。`group_id == "all"` 改全局顺序，否则改分组内顺序。
     /// 抽成纯函数是为了能直接单测，不必启动窗口。
     pub fn apply_reorder(&mut self, group_id: &str, symbols: &[String]) {
@@ -273,6 +329,78 @@ mod tests {
         d.order = vec!["d".into(), "gone".into(), "b".into(), "b".into()];
         d.normalize_order();
         assert_eq!(d.order, vec!["d", "b", "a", "c", "e"]);
+    }
+
+    fn add_instrument(d: &mut Data, sym: &str) {
+        d.instruments.push(Instrument {
+            symbol: sym.into(),
+            code: sym.trim_start_matches(|c: char| c.is_ascii_alphabetic()).into(),
+            market: "SZ".into(),
+            name: sym.into(),
+            kind: "stock".into(),
+        });
+    }
+
+    #[test]
+    fn set_groups_can_select_multiple() {
+        let mut d = sample();
+        add_instrument(&mut d, "a");
+        d.normalize_order();
+        d.set_symbol_groups("a", &["g1".into(), "g2".into()]).unwrap();
+        let gids: Vec<&str> = d.members.iter().filter(|m| m.symbol == "a")
+            .map(|m| m.group_id.as_str()).collect();
+        assert_eq!(gids.len(), 2);
+        assert!(gids.contains(&"g1") && gids.contains(&"g2"));
+        assert!(d.order.contains(&"a".to_string()));
+    }
+
+    #[test]
+    fn set_groups_keeps_original_sort() {
+        let mut d = sample();
+        add_instrument(&mut d, "b");
+        d.normalize_order();
+        // b 在 g1 原本是第 2 位，重新保存后不应被挪到末尾
+        d.set_symbol_groups("b", &["g1".into()]).unwrap();
+        let sort = d.members.iter().find(|m| m.symbol == "b" && m.group_id == "g1")
+            .unwrap().sort;
+        assert_eq!(sort, 1);
+    }
+
+    #[test]
+    fn set_groups_empty_removes_instrument() {
+        let mut d = sample();
+        add_instrument(&mut d, "a");
+        d.normalize_order();
+        d.set_symbol_groups("a", &[]).unwrap();
+        assert!(!d.members.iter().any(|m| m.symbol == "a"));
+        assert!(!d.instruments.iter().any(|i| i.symbol == "a"));
+        assert!(!d.order.contains(&"a".to_string()));
+    }
+
+    #[test]
+    fn set_groups_rejects_unknown_and_industry() {
+        let mut d = sample();
+        add_instrument(&mut d, "a");
+        d.groups.push(Group {
+            id: "ind".into(), name: "半导体".into(), kind: "industry".into(),
+            parent_id: None, sort: 0, collapsed: false, color: None,
+        });
+        assert!(d.set_symbol_groups("a", &["nope".into()]).is_err());
+        assert!(d.set_symbol_groups("a", &["ind".into()]).is_err());
+    }
+
+    #[test]
+    fn set_groups_leaves_industry_membership_alone() {
+        let mut d = sample();
+        add_instrument(&mut d, "a");
+        d.groups.push(Group {
+            id: "ind".into(), name: "半导体".into(), kind: "industry".into(),
+            parent_id: None, sort: 0, collapsed: false, color: None,
+        });
+        d.members.push(member("ind", "a", 0));
+        d.set_symbol_groups("a", &["g2".into()]).unwrap();
+        assert!(d.members.iter().any(|m| m.group_id == "ind" && m.symbol == "a"));
+        assert!(d.members.iter().any(|m| m.group_id == "g2" && m.symbol == "a"));
     }
 }
 

@@ -240,6 +240,7 @@ function rowMenu(sym, x, y) {
   const items = [
     { heading: ins.name + ' · ' + ins.code },
     { label: '查看详情', onClick: () => actions.openDetail && actions.openDetail(sym) },
+    { label: '管理分组…', onClick: () => actions.openGroupPicker && actions.openGroupPicker(sym, ins.name) },
     { label: '上移', onClick: () => moveRow(sym, -1) },
     { label: '下移', onClick: () => moveRow(sym, 1) },
     { sep: true },
