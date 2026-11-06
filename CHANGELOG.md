@@ -4,6 +4,37 @@
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-06
+
+### 架构
+
+- 前端从单个 1600 行脚本重写为 ES Modules 分层：状态与命令通道（core）、纯函数格式化与 SVG 图表（format）、外壳（shell）、导航（sidebar）、列表（watchlist）、详情（detail）、命令面板与设置（palette）、编排（main）
+- 视图模块互不引用，统一由 `actions` 注册表编排；单一状态源，命令返回后统一渲染
+- CSS 拆为设计令牌与基础组件（core.css）、外框布局（layout.css）、业务视图（views.css），全站统一颜色、间距、字号与圆角
+- 后端 Tauri/Rust 分层保持不变，数据格式向后兼容，升级不丢失自选
+
+### 信息架构
+
+- 明确三层：左侧全局导航（工作台 / 自选分组 / 行业分类）、主工作区（面包屑 + 指数条 + 列表或详情）、底部状态栏（连接 / 数据源 / 更新时间 / 刷新间隔）
+- 列表定位为扫描雷达：价格、涨跌、走势优先；新增常驻但低对比的行内操作列 `↑ ↓ ⋯`
+- 详情定位为聚焦视图：面包屑返回 + 返回/上下只按钮，价格 → 图表 → 指标 → 盘口
+- 新增列表与详情并排模式；并排时列表收敛为三列（名称 / 最新价 / 涨跌幅）
+- 图表周期与缩放复位改为可见工具条，不再只依赖滚轮与双击
+
+### 交互
+
+- 排序：拖动行、行内上移下移、右键菜单、表头列排序、视图菜单选择排序方式，五条路径一致
+- 分组：hover 出现新建/更多按钮，右键菜单补充重命名、颜色、上下移、删除
+- 状态：首屏骨架、行情失败可点击重试、缓存标记、连接状态灯、脚本异常可见横幅
+- 搜索面板保留输入法组词保护、代码直接添加、类型标签与「已添加」标记
+- 设置按行情刷新 / 显示 / 托盘 / 关于分区；新增「视图」菜单控制排序与列显隐
+
+### 修复
+
+- 启动期 `DOMTokenList.add('')` 抛异常导致侧栏与表头不渲染（重写时发现并修复）
+
+
+
 ## [1.1.6] - 2026-11-06
 
 ### 修复
@@ -140,7 +171,8 @@
 - 行情数据来自公开接口，仅供个人参考，不构成投资建议
 - 港股为延迟行情
 
-[Unreleased]: https://github.com/LiangLiang723/wangstock/compare/v1.1.6...HEAD
+[Unreleased]: https://github.com/LiangLiang723/wangstock/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/LiangLiang723/wangstock/releases/tag/v2.0.0
 [1.1.6]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.6
 [1.1.5]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.5
 [1.1.4]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.4
