@@ -27,3 +27,7 @@ desktop.ini
 *.p12
 *.pfx
 id_rsa*
+
+# Python 自检脚本缓存
+__pycache__/
+*.pyc
