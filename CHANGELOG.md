@@ -4,6 +4,21 @@
 
 ## [Unreleased]
 
+## [1.1.6] - 2026-11-06
+
+### 修复
+
+- 自选列表拖动行完全不生效：原生 HTML5 拖放在 WebView2 里依赖系统 OLE 通道，`dragstart` / `drop` 经常不派发，排序逻辑永远执行不到
+- 长列表无法拖到屏幕外的行：新增靠近上下边缘时自动滚动
+- 拖拽松手后误进详情页：拖拽结束的 click 会被短暂忽略
+
+### 变更
+
+- 拖拽改为纯鼠标事件实现（按下 → 移动 → 松开），行的 draggable 属性移除
+- 拖到侧栏分组改用同一套手势，不再依赖原生拖放
+- 行增加悬浮提示「拖动调整顺序 · 点击查看明细」
+- 按列排序状态下先恢复自定义顺序再拖拽，避免两种顺序冲突
+
 ## [1.1.5] - 2026-11-02
 
 ### 修复
@@ -125,7 +140,8 @@
 - 行情数据来自公开接口，仅供个人参考，不构成投资建议
 - 港股为延迟行情
 
-[Unreleased]: https://github.com/LiangLiang723/wangstock/compare/v1.1.5...HEAD
+[Unreleased]: https://github.com/LiangLiang723/wangstock/compare/v1.1.6...HEAD
+[1.1.6]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.6
 [1.1.5]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.5
 [1.1.4]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.4
 [1.1.3]: https://github.com/LiangLiang723/wangstock/releases/tag/v1.1.3
